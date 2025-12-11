@@ -26,7 +26,14 @@ func TestAPIClient_Keychains(t *testing.T) {
 
 	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
 		{
-			RequestCheck: requestCheckAuthorizationBearer,
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				func(t *testing.T, req *http.Request) {
+					query := req.URL.Query()
+					assert.Equal(t, "active", query.Get("filter[status]"))
+					assert.Equal(t, "10001", query.Get("filter[tenant]"))
+				},
+			),
 			Response: httpmock.RoundTripResponse{
 				Status: http.StatusOK,
 				Body:   accessCodesResponse,
@@ -39,7 +46,7 @@ func TestAPIClient_Keychains(t *testing.T) {
 		Logger:     slogt.New(t),
 	})
 
-	results, err := apiClient.Keychains(t.Context(), TaggedID{}, "")
+	results, err := apiClient.Keychains(t.Context(), 10001, "active")
 	assert.NoError(t, err)
 
 	keychains := results.Data
