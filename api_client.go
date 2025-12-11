@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,16 @@ const (
 	APIBaseURL             = "https://api.butterflymx.com"
 	DenizenGraphQLEndpoint = APIBaseURL + "/denizen/v1/graphql"
 )
+
+// Unlock API URL constants.
+const (
+	UnlockAPIBaseURL          = "https://api.unlock.prod.butterflymx.com"
+	UnlockAccessPointEndpoint = UnlockAPIBaseURL + "/v1/access-point"
+)
+
+// DefaultUserAgent is the User-Agent header value used by the API client. You
+// may want to change this via [APIClientOpts] if you need a different value.
+const DefaultUserAgent = "butterflymx-go-client/1.0"
 
 // APIStaticToken represents a static ButterflyMX API token.
 type APIStaticToken string
@@ -45,6 +56,7 @@ type APIClient struct {
 type APIClientOpts struct {
 	HTTPClient *http.Client
 	Logger     *slog.Logger
+	UserAgent  string
 }
 
 // NewAPIClient creates a new API client.
@@ -53,6 +65,7 @@ func NewAPIClient(tokenSource APITokenSource, opts *APIClientOpts) *APIClient {
 	opts = use(opts, &APIClientOpts{})
 	opts.HTTPClient = use(opts.HTTPClient, http.DefaultClient)
 	opts.Logger = use(opts.Logger, slog.Default())
+	opts.UserAgent = use(opts.UserAgent, DefaultUserAgent)
 
 	return &APIClient{
 		tokenSource: tokenSource,
@@ -60,8 +73,9 @@ func NewAPIClient(tokenSource APITokenSource, opts *APIClientOpts) *APIClient {
 	}
 }
 
-func use[T any](v, otherwise *T) *T {
-	if v != nil {
+func use[T comparable](v, otherwise T) T {
+	var zero T
+	if v != zero {
 		return v
 	}
 	return otherwise
@@ -147,15 +161,38 @@ func (c *APIClient) TenantAccessPoints(ctx context.Context, tenantID TaggedID) i
 	}
 }
 
+// UnlockDoor sends a request to unlock a door (access point) for a given
+// tenant.
+func (c *APIClient) UnlockDoor(ctx context.Context, tenantID ID, accessPointID ID) error {
+	tenantTaggedID := NewTaggedID("tenant", tenantID)
+	accessPointTaggedID := NewTaggedID("access_point", accessPointID)
+
+	req, err := c.createRequest(ctx, http.MethodPost, UnlockAccessPointEndpoint, map[string]any{
+		"accessPointId": accessPointTaggedID,
+		"source":        "mobile_app",
+		"tenantId":      tenantTaggedID,
+	})
+	if err != nil {
+		return err
+	}
+
+	var resp struct{}
+	if err := c.doJSONRequest(req, &resp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Keychains retrieves a rich list of keychains, with all related entities
 // resolved into a convenient structure. It calls the GET /v3/access_codes REST
 // endpoint. This method automatically handles pagination and accumulates all
 // results before resolving relationships.
-func (c *APIClient) Keychains(ctx context.Context, tenantID TaggedID, status AccessCodeStatus) (*ResultsWithReferences[Keychain], error) {
+func (c *APIClient) Keychains(ctx context.Context, tenantID ID, status AccessCodeStatus) (*ResultsWithReferences[Keychain], error) {
 	slog := c.opts.Logger
 	slog.Debug(
 		"fetching keychains",
-		"tenant_id", tenantID.Number,
+		"tenant_id", tenantID,
 		"status", status)
 
 	type accessCodesResponse struct {
@@ -173,7 +210,7 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID TaggedID, status Acc
 	for page := 1; hasNext; page++ {
 		path := "/v3/access_codes?" + url.Values{
 			"include":        {"virtual_keys.door_releases.panel,devices"},
-			"filter[tenant]": {fmt.Sprintf("%d", tenantID.Number)},
+			"filter[tenant]": {fmt.Sprintf("%d", tenantID)},
 			"filter[status]": {string(status)},
 			"page[size]":     {"100"},
 			"page[number]":   {strconv.Itoa(page)},
@@ -376,12 +413,7 @@ func (c *APIClient) CreateVirtualKeys(
 }
 
 func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query string, variables map[string]any, v any) error {
-	token, err := c.tokenSource.APIToken(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get API token: %w", err)
-	}
-
-	reqBody, err := json.Marshal(map[string]any{
+	req, err := c.createRequest(ctx, http.MethodPost, DenizenGraphQLEndpoint, map[string]any{
 		"operationName": operationName,
 		"variables":     variables,
 		"query":         query,
@@ -389,50 +421,47 @@ func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query s
 	if err != nil {
 		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, DenizenGraphQLEndpoint, bytes.NewBuffer(reqBody))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+string(token))
-
 	return c.doJSONRequest(req, v)
 }
 
 func (c *APIClient) getAPI(ctx context.Context, path string, v any) error {
-	token, err := c.tokenSource.APIToken(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get API token: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, APIBaseURL+path, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+string(token))
-
-	return c.doJSONRequest(req, v)
+	return c.doAPIWithBody(ctx, http.MethodGet, path, nil, v)
 }
 
 func (c *APIClient) doAPIWithBody(ctx context.Context, method, path string, body any, v any) error {
-	token, err := c.tokenSource.APIToken(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get API token: %w", err)
-	}
-
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, APIBaseURL+path, bytes.NewBuffer(bodyBytes))
+	req, err := c.createRequest(ctx, method, APIBaseURL+path, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+string(token))
-
 	return c.doJSONRequest(req, v)
+}
+
+func (c *APIClient) createRequest(ctx context.Context, method, rawURL string, jsonBody any) (*http.Request, error) {
+	token, err := c.tokenSource.APIToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get API token: %w", err)
+	}
+
+	var body io.Reader
+	if jsonBody != nil {
+		b, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		body = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+string(token))
+	req.Header.Set("User-Agent", c.opts.UserAgent)
+	if jsonBody != nil {
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	}
+
+	return req, nil
 }
 
 func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {

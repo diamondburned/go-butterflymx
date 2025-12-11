@@ -155,6 +155,34 @@ func TestAPIClient_Keychain(t *testing.T) {
 	assert.True(t, virtualKey.Attributes.SentAt.IsZero())
 }
 
+func TestAPIClient_UnlockDoor(t *testing.T) {
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				func(t *testing.T, req *http.Request) {
+					// Verify that the request URL contains the unlock endpoint
+					// base URL and not the normal API base URL.
+					assert.Contains(t, req.URL.String(), UnlockAPIBaseURL)
+				},
+				httpmock.RoundTripRequestCheckJSON(func(t *testing.T, data map[string]any) {
+					assert.Equal(t, "prod-access_point-12345", data["accessPointId"])
+					assert.Equal(t, "prod-tenant-67890", data["tenantId"])
+				}),
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   []byte(`{"requestId": "meowmeow"}`), // no idea what this means to the client
+			},
+		},
+	})
+
+	apiClient := newTestAPIClient(t, mockrt)
+
+	err := apiClient.UnlockDoor(t.Context(), 67890, 12345)
+	assert.NoError(t, err)
+}
+
 func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 	customKeychainRequest, customKeychainResponse := readFileAsRequestAndResponseBodies(t, "testdata/api-post-v3-keychains-custom.json")
 	assert.NoError(t, customKeychainRequest.Canonicalize())
