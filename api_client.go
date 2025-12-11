@@ -12,8 +12,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
+
+	"github.com/cenkalti/backoff/v5"
 )
 
 // API URL constants.
@@ -30,20 +33,45 @@ const (
 
 // DefaultUserAgent is the User-Agent header value used by the API client. You
 // may want to change this via [APIClientOpts] if you need a different value.
-const DefaultUserAgent = "butterflymx-go-client/1.0"
+var DefaultUserAgent = "butterflymx-go-client/1.0"
+
+// DefaultRequestRetryOpts is the default retry options for retrying API
+// requests without backoff. To override backoff, set the backoff constructor
+// function.
+var DefaultRequestRetryOpts = []backoff.RetryOption{
+	backoff.WithMaxTries(5),
+}
+
+// DefaultRequestBackoff is the default backoff configuration for retrying API
+// requests.
+var DefaultRequestBackoff = func() backoff.BackOff {
+	return &backoff.ExponentialBackOff{
+		InitialInterval:     500 * time.Millisecond,
+		RandomizationFactor: backoff.DefaultRandomizationFactor,
+		Multiplier:          backoff.DefaultMultiplier,
+		MaxInterval:         5 * time.Second,
+	}
+}
 
 // APIStaticToken represents a static ButterflyMX API token.
 type APIStaticToken string
 
+var _ APITokenSource = APIStaticToken("")
+
 // APIToken returns the token as a string.
-func (t APIStaticToken) APIToken(ctx context.Context) (APIStaticToken, error) {
+func (t APIStaticToken) APIToken(ctx context.Context, _ bool) (APIStaticToken, error) {
 	return t, nil
 }
 
 // APITokenSource is an interface for acquiring a ButterflyMX API token.
 type APITokenSource interface {
 	// APIToken should return a valid API token or an error.
-	APIToken(ctx context.Context) (APIStaticToken, error)
+	//
+	// If [renew] is true, the implementation should attempt to renew the token
+	// even if a cached token is available. Implementations may ignore this
+	// parameter, and the caller must detect that the "new" token is still
+	// invalid.
+	APIToken(ctx context.Context, renew bool) (APIStaticToken, error)
 }
 
 // APIClient is a client for interacting with the main ButterflyMX API.
@@ -54,9 +82,11 @@ type APIClient struct {
 
 // APIClientOpts holds optional parameters for configuring the API client.
 type APIClientOpts struct {
-	HTTPClient *http.Client
-	Logger     *slog.Logger
-	UserAgent  string
+	HTTPClient         *http.Client
+	Logger             *slog.Logger
+	UserAgent          string
+	RequestRetryOpts   []backoff.RetryOption // appends to [DefaultRequestRetryOpts]
+	RequestBackoffFunc func() backoff.BackOff
 }
 
 // NewAPIClient creates a new API client.
@@ -66,6 +96,10 @@ func NewAPIClient(tokenSource APITokenSource, opts *APIClientOpts) *APIClient {
 	opts.HTTPClient = use(opts.HTTPClient, http.DefaultClient)
 	opts.Logger = use(opts.Logger, slog.Default())
 	opts.UserAgent = use(opts.UserAgent, DefaultUserAgent)
+	opts.RequestRetryOpts = slices.Concat(DefaultRequestRetryOpts, opts.RequestRetryOpts)
+	if opts.RequestRetryOpts == nil {
+		opts.RequestRetryOpts = DefaultRequestRetryOpts
+	}
 
 	return &APIClient{
 		tokenSource: tokenSource,
@@ -437,11 +471,6 @@ func (c *APIClient) doAPIWithBody(ctx context.Context, method, path string, body
 }
 
 func (c *APIClient) createRequest(ctx context.Context, method, rawURL string, jsonBody any) (*http.Request, error) {
-	token, err := c.tokenSource.APIToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get API token: %w", err)
-	}
-
 	var body io.Reader
 	if jsonBody != nil {
 		b, err := json.Marshal(jsonBody)
@@ -455,7 +484,6 @@ func (c *APIClient) createRequest(ctx context.Context, method, rawURL string, js
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+string(token))
 	req.Header.Set("User-Agent", c.opts.UserAgent)
 	if jsonBody != nil {
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -465,21 +493,61 @@ func (c *APIClient) createRequest(ctx context.Context, method, rawURL string, js
 }
 
 func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
-	resp, err := c.opts.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to perform HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
+	var renewToken bool
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
-	}
+	retryOpts := slices.Concat(c.opts.RequestRetryOpts, []backoff.RetryOption{
+		backoff.WithBackOff(c.opts.RequestBackoffFunc()),
+		backoff.WithNotify(func(err error, d time.Duration) {
+			slog := c.opts.Logger
+			slog.Warn(
+				"retrying API request after recoverable error",
+				"error", err,
+				"delay", d,
+				"req.method", req.Method,
+				"req.url", req.URL.String(),
+				"renew_token", renewToken)
+		}),
+	})
 
-	if err := json.UnmarshalRead(resp.Body, dst); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON response: %w", err)
-	}
+	_, err := backoff.Retry(req.Context(), func() (*struct{}, error) {
+		token, err := c.tokenSource.APIToken(req.Context(), renewToken)
+		if err != nil {
+			return nil, backoff.Permanent(fmt.Errorf("failed to get API token: %w", err))
+		}
 
-	return nil
+		req.Header.Set("Authorization", "Bearer "+string(token))
+
+		resp, err := c.opts.HTTPClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("HTTP request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			if !renewToken {
+				renewToken = true
+				return nil, fmt.Errorf("API request unauthorized, renewing token and retrying")
+			}
+			// Even after renewing the token, we got a 401. Give up.
+			return nil, backoff.Permanent(fmt.Errorf("API request unauthorized even after renewing token"))
+		}
+
+		if resp.StatusCode >= 500 {
+			return nil, fmt.Errorf("server error: status %d", resp.StatusCode)
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, backoff.Permanent(fmt.Errorf("API request failed on non-server error: status %d", resp.StatusCode))
+		}
+
+		if err := json.UnmarshalRead(resp.Body, dst); err != nil {
+			return nil, backoff.Permanent(fmt.Errorf("failed to unmarshal JSON response: %w", err))
+		}
+
+		return nil, nil
+	}, retryOpts...)
+
+	return err
 }
 
 func mustParseURL(rawURL string) *url.URL {
