@@ -348,13 +348,15 @@ func (c *APIClient) CreateVirtualKeys(
 	slog := c.opts.Logger
 
 	type RequestBody struct {
-		Type       string         `json:"type"`
-		Attributes VirtualKeyArgs `json:"attributes"`
+		Data struct {
+			Type       string         `json:"type"`
+			Attributes VirtualKeyArgs `json:"attributes"`
+		} `json:"data"`
 	}
 
 	var body RequestBody
-	body.Type = "virtual_keys"
-	body.Attributes = virtualKeyArgs
+	body.Data.Type = "virtual_keys"
+	body.Data.Attributes = virtualKeyArgs
 
 	slog.Debug(
 		"creating virtual key for keychain",

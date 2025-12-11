@@ -203,6 +203,51 @@ func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 	assert.Equal(t, "Front Door", device.Attributes.Name)
 }
 
+func TestAPIClient_CreateVirtualKeys(t *testing.T) {
+	virtualKeyRequest, virtualKeyResponse := readFileAsRequestAndResponseBodies(t, "testdata/api-post-v3-keychains-id.json")
+	assert.NoError(t, virtualKeyRequest.Canonicalize())
+	assert.NoError(t, virtualKeyResponse.Canonicalize())
+
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				func(t *testing.T, req *http.Request) {
+					assert.Contains(t, req.URL.Path, "/v3/keychains/10001/virtual_keys")
+				},
+				httpmock.RoundTripRequestCheckJSON(func(t *testing.T, data jsontext.Value) {
+					assert.NoError(t, data.Canonicalize())
+					// Ensure request body matches expected exactly.
+					assert.Equal(t, string(virtualKeyRequest), string(data))
+				}),
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   virtualKeyResponse,
+			},
+		},
+	})
+
+	apiClient := newTestAPIClient(t, mockrt)
+
+	results, err := apiClient.CreateVirtualKeys(t.Context(), 10001, VirtualKeyArgs{
+		Recipients: []VirtualKeyRecipient{
+			{DeliverTo: "john.doe@example.com", Name: "john.doe@example.com"},
+		},
+	})
+	assert.NoError(t, err)
+
+	virtualKeys := results.Data
+	assert.Equal(t, 1, len(virtualKeys))
+	assert.Equal(t, ID(10002), virtualKeys[0].ID)
+	assert.Equal(t, "john.doe@example.com", virtualKeys[0].Attributes.Name)
+	assert.Equal(t, "john.doe@example.com", virtualKeys[0].Attributes.Email)
+	assert.Equal(t, PINCode("012345"), virtualKeys[0].Attributes.PINCode)
+	assert.Equal(t, "<REDACTED>", virtualKeys[0].Attributes.QRCodeImageURL)
+	assert.Equal(t, "<REDACTED>", virtualKeys[0].Attributes.InstructionsURL)
+	assert.True(t, virtualKeys[0].Attributes.SentAt.IsZero())
+}
+
 func newTestAPIClient(t *testing.T, mockrt http.RoundTripper) *APIClient {
 	return NewAPIClient(mockToken, &APIClientOpts{
 		HTTPClient: &http.Client{Transport: mockrt},
