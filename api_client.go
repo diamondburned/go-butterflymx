@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // API URL constants.
@@ -146,9 +147,10 @@ func (c *APIClient) TenantAccessPoints(ctx context.Context, tenantID TaggedID) i
 	}
 }
 
-// Keychains retrieves a rich list of keychains, with all related entities resolved into a convenient structure.
-// It calls the GET /v3/access_codes REST endpoint, which follows the JSON:API specification.
-// This method automatically handles pagination and accumulates all results before resolving relationships.
+// Keychains retrieves a rich list of keychains, with all related entities
+// resolved into a convenient structure. It calls the GET /v3/access_codes REST
+// endpoint. This method automatically handles pagination and accumulates all
+// results before resolving relationships.
 func (c *APIClient) Keychains(ctx context.Context, tenantID TaggedID, status AccessCodeStatus) (*ResultsWithReferences[Keychain], error) {
 	slog := c.opts.Logger
 	slog.Debug(
@@ -202,23 +204,90 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID TaggedID, status Acc
 		hasNext = resp.Links.Next != nil
 	}
 
-	topLevel, err := unmarshalResultsWithReferences[Keychain](allData, allIncluded, slog)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal top-level objects: %w", err)
+	return unmarshalResultsWithReferences[Keychain](allData, allIncluded, slog)
+}
+
+// CustomKeychainArgs holds arguments for creating a new keychain.
+type CustomKeychainArgs struct {
+	// Name is the name of the keychain.
+	Name string `json:"name"`
+	// StartsAt is the start time of the keychain.
+	StartsAt time.Time `json:"starts_at,format:'2006-01-02T15:04:05-0700'"`
+	// EndsAt is the end time of the keychain.
+	EndsAt time.Time `json:"ends_at,format:'2006-01-02T15:04:05-0700'"`
+	// AllowUnitAccess indicates whether unit access is allowed.
+	AllowUnitAccess bool `json:"allow_unit_access"`
+}
+
+// CreateCustomKeychain creates a new custom keychain.
+// It calls the POST /v3/keychains/custom endpoint.
+func (c *APIClient) CreateCustomKeychain(
+	ctx context.Context,
+	tenantID ID, accessPointIDs []ID, args CustomKeychainArgs,
+) (*ResultWithReferences[Keychain], error) {
+	slog := c.opts.Logger
+
+	type RequestBody struct {
+		Data struct {
+			Type       string `json:"type"`
+			Attributes struct {
+				Kind string `json:"kind"`
+				CustomKeychainArgs
+			} `json:"attributes"`
+			Relationships struct {
+				AccessPoints struct {
+					Data []RawReference `json:"data"`
+				} `json:"access_points"`
+				Devices struct {
+					Data []RawReference `json:"data"` // unsupported
+				} `json:"devices"`
+				Tenant struct {
+					Data RawReference `json:"data"`
+				} `json:"tenant"`
+			} `json:"relationships"`
+		} `json:"data"`
 	}
 
-	slog.Debug(
-		"unmarshaled all top-level objects",
-		"data_count", len(allData),
-		"included_count", len(allIncluded))
+	var body RequestBody
+	body.Data.Type = "keychains"
+	body.Data.Attributes.Kind = "custom"
+	body.Data.Attributes.CustomKeychainArgs = args
+	body.Data.Relationships.Tenant.Data = RawReference{
+		ID:   tenantID,
+		Type: "tenants",
+	}
+	body.Data.Relationships.AccessPoints.Data = make([]RawReference, len(accessPointIDs))
+	for i, apID := range accessPointIDs {
+		body.Data.Relationships.AccessPoints.Data[i] = RawReference{
+			ID:   apID,
+			Type: "access_points",
+		}
+	}
+	// Since devices are unsupported, we set an empty list.
+	body.Data.Relationships.Devices.Data = []RawReference{}
 
-	return topLevel, nil
+	slog.Debug(
+		"creating custom keychain",
+		"tenant_id", tenantID,
+		"access_point_ids", accessPointIDs,
+		"args", args)
+
+	var resp struct {
+		Data     RawReference   `json:"data"`
+		Included []RawReference `json:"included"`
+	}
+
+	if err := c.doAPIWithBody(ctx, http.MethodPost, "/v3/keychains/custom", body, &resp); err != nil {
+		return nil, err
+	}
+
+	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included, slog)
 }
 
 func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query string, variables map[string]any, v any) error {
 	token, err := c.tokenSource.APIToken(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get API token: %w", err)
 	}
 
 	reqBody, err := json.Marshal(map[string]any{
@@ -237,13 +306,13 @@ func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query s
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+string(token))
 
-	return c.doJSONRequest(ctx, req, v)
+	return c.doJSONRequest(req, v)
 }
 
 func (c *APIClient) getAPI(ctx context.Context, path string, v any) error {
 	token, err := c.tokenSource.APIToken(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get API token: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, APIBaseURL+path, nil)
@@ -252,10 +321,30 @@ func (c *APIClient) getAPI(ctx context.Context, path string, v any) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+string(token))
 
-	return c.doJSONRequest(ctx, req, v)
+	return c.doJSONRequest(req, v)
 }
 
-func (c *APIClient) doJSONRequest(ctx context.Context, req *http.Request, dst any) error {
+func (c *APIClient) doAPIWithBody(ctx context.Context, method, path string, body any, v any) error {
+	token, err := c.tokenSource.APIToken(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get API token: %w", err)
+	}
+
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, APIBaseURL+path, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+string(token))
+
+	return c.doJSONRequest(req, v)
+}
+
+func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
 	resp, err := c.opts.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to perform HTTP request: %w", err)

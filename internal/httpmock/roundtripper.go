@@ -22,7 +22,7 @@ type RoundTripRequestCheck func(t *testing.T, req *http.Request)
 // RoundTripRequestCheckJSON creates a RoundTripRequestCheck that parses the
 // request body as JSON into the specified type T and applies the provided check
 // function.
-func RoundTripRequestCheckJSON[T any](req *http.Request, checkFn func(t *testing.T, data T)) RoundTripRequestCheck {
+func RoundTripRequestCheckJSON[T any](checkFn func(t *testing.T, data T)) RoundTripRequestCheck {
 	return func(t *testing.T, req *http.Request) {
 		var data T
 		if err := json.UnmarshalRead(req.Body, &data); err != nil {
@@ -79,9 +79,7 @@ func (m *RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	m.index++
 
 	if rt.RequestCheck != nil {
-		m.t.Run("request_check", func(t *testing.T) {
-			rt.RequestCheck(m.t, req)
-		})
+		rt.RequestCheck(m.t, req)
 	}
 
 	if rt.Response.Error != nil {

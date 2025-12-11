@@ -1,6 +1,7 @@
 package butterflymx
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -16,16 +17,18 @@ import (
 
 var mockToken APIStaticToken = "meowmeow"
 
+func requestCheckAuthorizationBearer(t *testing.T, req *http.Request) {
+	assert.Equal(t, "Bearer meowmeow", req.Header.Get("Authorization"))
+}
+
 func TestAPIClient_Keychains(t *testing.T) {
 	accessCodesResponse := readFileAsResponseBody(t, "testdata/api-get-v3-access-codes.json")
 
 	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
 		{
-			RequestCheck: func(t *testing.T, req *http.Request) {
-				assert.Equal(t, "Bearer meowmeow", req.Header.Get("Authorization"))
-			},
+			RequestCheck: requestCheckAuthorizationBearer,
 			Response: httpmock.RoundTripResponse{
-				Status: 200,
+				Status: http.StatusOK,
 				Body:   accessCodesResponse,
 			},
 		},
@@ -83,16 +86,81 @@ func TestAPIClient_Keychains(t *testing.T) {
 	assert.Equal(t, "<REDACTED>", doorRelease.Attributes.MediumURL)
 }
 
+func TestAPIClient_CreateCustomKeychain(t *testing.T) {
+	customKeychainRequest, customKeychainResponse := readFileAsRequestAndResponseBodies(t, "testdata/api-post-v3-keychains-custom.json")
+	assert.NoError(t, customKeychainRequest.Canonicalize())
+	assert.NoError(t, customKeychainResponse.Canonicalize())
+
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				httpmock.RoundTripRequestCheckJSON(func(t *testing.T, data jsontext.Value) {
+					assert.NoError(t, data.Canonicalize())
+					// Ensure request body matches expected exactly.
+					assert.Equal(t, string(customKeychainRequest), string(data))
+				}),
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   customKeychainResponse,
+			},
+		},
+	})
+
+	apiClient := NewAPIClient(mockToken, &APIClientOpts{
+		HTTPClient: &http.Client{Transport: mockrt},
+		Logger:     slogt.New(t),
+	})
+
+	result, err := apiClient.CreateCustomKeychain(t.Context(), 7648837, []ID{53449}, CustomKeychainArgs{
+		Name:            "Jane Test",
+		StartsAt:        mustRFC3339(t, "2025-12-09T16:58:00-0800"),
+		EndsAt:          mustRFC3339(t, "2025-12-10T17:58:00-0800"),
+		AllowUnitAccess: false,
+	})
+	assert.NoError(t, err)
+
+	keychain := result.Data
+
+	// Assert keychain object.
+	assert.Equal(t, 31629991, keychain.ID)
+	assert.Equal(t, "Jane Test", keychain.Attributes.Name)
+	assert.Equal(t, CustomKeychain, keychain.Attributes.Kind)
+	assert.Equal(t, "2025-12-10T00:58:00Z", keychain.Attributes.StartsAt.Format(time.RFC3339))
+	assert.Equal(t, "2025-12-11T01:58:00Z", keychain.Attributes.EndsAt.Format(time.RFC3339))
+
+	// Assert devices references.
+	assert.Zero(t, keychain.Relationships.VirtualKeys)
+	assert.Equal(t, 1, len(keychain.Relationships.Devices))
+	assert.Equal(t, 27861, keychain.Relationships.Devices[0].ID)
+	assert.Equal(t, TypePanel, keychain.Relationships.Devices[0].Type)
+	assert.Zero(t, keychain.Relationships.Devices[0].Data)
+
+	// Assert resolving of device.
+	device, err := keychain.Relationships.Devices[0].Resolve(result.Refs)
+	assert.NoError(t, err)
+	assert.Equal(t, 27861, device.ID)
+	assert.Equal(t, "Front Door", device.Attributes.Name)
+}
+
+func mustRFC3339(t *testing.T, s string) time.Time {
+	tm, err := time.Parse("2006-01-02T15:04:05-0700", s)
+	assert.NoError(t, err, "BUG: failed to parse RFC3339 time constant")
+	return tm
+}
+
 func readFileAsRequestAndResponseBodies(t *testing.T, path string) (jsontext.Value, jsontext.Value) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read test file %q: %v", path, err)
 	}
 
+	dec := jsontext.NewDecoder(bytes.NewReader(b))
 	var v1, v2 jsontext.Value
 	if err := errors.Join(
-		json.Unmarshal(b, &v1),
-		json.Unmarshal(b, &v2),
+		json.UnmarshalDecode(dec, &v1),
+		json.UnmarshalDecode(dec, &v2),
 	); err != nil {
 		t.Fatalf("failed to unmarshal JSON from test file %q: %v", path, err)
 	}

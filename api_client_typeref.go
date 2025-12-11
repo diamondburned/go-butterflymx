@@ -18,12 +18,20 @@ const (
 	TypeKeychain    ObjectType = "keychains"
 	TypePanel       ObjectType = "panels"
 	TypeVirtualKey  ObjectType = "virtual_keys"
+	TypeBuilding    ObjectType = "buildings"
 )
 
 // ResultsWithReferences holds a list of results of type T along with
 // a map of references to all related objects.
 type ResultsWithReferences[T any] struct {
 	Data []T
+	Refs map[ID]RawReference
+}
+
+// ResultWithReferences holds a single result of type T along with
+// a map of references to all related objects.
+type ResultWithReferences[T any] struct {
+	Data T
 	Refs map[ID]RawReference
 }
 
@@ -93,7 +101,27 @@ func unmarshalResultsWithReferences[DataT any](data, included []RawReference, sl
 		results.Refs[raw.ID] = raw
 	}
 
+	slog.Debug(
+		"unmarshaled results with references",
+		"data_count", len(results.Data),
+		"refs_count", len(results.Refs),
+		"included_count", len(included))
+
 	return &results, nil
+}
+
+func unmarshalResultWithReferences[DataT any](data RawReference, included []RawReference, slog *slog.Logger) (*ResultWithReferences[DataT], error) {
+	results, err := unmarshalResultsWithReferences[DataT]([]RawReference{data}, included, slog)
+	if err != nil {
+		return nil, err
+	}
+	if len(results.Data) != 1 {
+		panic("BUG: expected exactly one data object")
+	}
+	return &ResultWithReferences[DataT]{
+		Data: results.Data[0],
+		Refs: results.Refs,
+	}, nil
 }
 
 func unmarshalReference[T any](raw RawReference) (*T, error) {

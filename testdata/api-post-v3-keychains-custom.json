@@ -1,0 +1,82 @@
+{
+  "data": {
+    "type": "keychains",
+    "attributes": {
+      "allow_unit_access": false,
+      "ends_at": "2025-12-10T17:58:00-0800",
+      "kind": "custom",
+      "name": "Jane Test",
+      "starts_at": "2025-12-09T16:58:00-0800"
+    },
+    "relationships": {
+      "access_points": {
+        "data": [
+          {
+            "type": "access_points",
+            "id": "53449"
+          }
+        ]
+      },
+      "devices": {
+        "data": []
+      },
+      "tenant": {
+        "data": {
+          "type": "tenants",
+          "id": "7648837"
+        }
+      }
+    }
+  }
+}
+{
+  "data": {
+    "id": "31629991",
+    "type": "keychains",
+    "attributes": {
+      "name": "Jane Test",
+      "weekdays": [],
+      "starts_at": "2025-12-10T00:58:00Z",
+      "ends_at": "2025-12-11T01:58:00Z",
+      "time_from": "16:58",
+      "time_to": "17:58",
+      "kind": "custom",
+      "start_date": "2025-12-09",
+      "end_date": "2025-12-10",
+      "allow_unit_access": false
+    },
+    "relationships": {
+      "virtual_keys": {
+        "data": []
+      },
+      "devices": {
+        "data": [
+          {
+            "id": "27861",
+            "type": "panels"
+          }
+        ]
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "27861",
+      "type": "panels",
+      "attributes": {
+        "name": "Front Door",
+        "nfc": {
+          "uuid": ""
+        }
+      },
+      "relationships": {
+        "building": {
+          "data": {
+            "id": "25898",
+            "type": "buildings"
+          }
+        }
+      }
+    }
+  ]
+}

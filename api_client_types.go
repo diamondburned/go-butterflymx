@@ -19,9 +19,28 @@ var ErrInvalidTaggedID = errors.New("invalid TaggedID")
 // ID is an untagged numeric ID.
 type ID int
 
+var (
+	_ json.Marshaler   = ID(0)
+	_ json.Unmarshaler = (*ID)(nil)
+)
+
 // MarshalJSON implements [json.Marshaler].
 func (id ID) MarshalJSON() ([]byte, error) {
-	return []byte(strconv.Itoa(int(id))), nil
+	return json.Marshal(strconv.Itoa(int(id)))
+}
+
+// UnmarshalJSON implements [json.Unmarshaler].
+func (id *ID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("invalid ID: %w", err)
+	}
+	*id = ID(n)
+	return nil
 }
 
 // TaggedID is a string of type `prod-{type}-{id}`.
@@ -30,6 +49,12 @@ type TaggedID struct {
 	Type   string // e.g., tenant, unit, building
 	Number ID     // numeric ID
 }
+
+var (
+	_ fmt.Stringer             = (*TaggedID)(nil)
+	_ encoding.TextMarshaler   = (*TaggedID)(nil)
+	_ encoding.TextUnmarshaler = (*TaggedID)(nil)
+)
 
 // NewTaggedID creates a new TaggedID with the "prod" prefix.
 func NewTaggedID(typ string, id ID) TaggedID {
@@ -62,6 +87,15 @@ func (t *TaggedID) UnmarshalText(text []byte) error {
 		Number: ID(id),
 	}
 	return nil
+}
+
+// TaggedIDsToNumbers converts a slice of TaggedID to a slice of ID.
+func TaggedIDsToNumbers(taggedIDs []TaggedID) []ID {
+	ids := make([]ID, len(taggedIDs))
+	for i, tID := range taggedIDs {
+		ids[i] = tID.Number
+	}
+	return ids
 }
 
 // PINCode represents a door PIN code.
