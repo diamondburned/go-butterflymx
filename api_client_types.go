@@ -3,100 +3,11 @@
 package butterflymx
 
 import (
-	"encoding"
 	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"iter"
-	"strconv"
-	"strings"
 	"time"
 )
-
-// ErrInvalidTaggedID is returned when a TaggedID is invalid.
-var ErrInvalidTaggedID = errors.New("invalid TaggedID")
-
-// ID is an untagged numeric ID.
-type ID int
-
-var (
-	_ json.Marshaler   = ID(0)
-	_ json.Unmarshaler = (*ID)(nil)
-)
-
-// MarshalJSON implements [json.Marshaler].
-func (id ID) MarshalJSON() ([]byte, error) {
-	return json.Marshal(strconv.Itoa(int(id)))
-}
-
-// UnmarshalJSON implements [json.Unmarshaler].
-func (id *ID) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return fmt.Errorf("invalid ID: %w", err)
-	}
-	*id = ID(n)
-	return nil
-}
-
-// TaggedID is a string of type `prod-{type}-{id}`.
-type TaggedID struct {
-	Prefix string // prod
-	Type   string // e.g., tenant, unit, building
-	Number ID     // numeric ID
-}
-
-var (
-	_ fmt.Stringer             = (*TaggedID)(nil)
-	_ encoding.TextMarshaler   = (*TaggedID)(nil)
-	_ encoding.TextUnmarshaler = (*TaggedID)(nil)
-)
-
-// NewTaggedID creates a new TaggedID with the "prod" prefix.
-func NewTaggedID(typ string, id ID) TaggedID {
-	return TaggedID{"prod", typ, id}
-}
-
-// String returns the string representation of the TaggedID.
-func (t TaggedID) String() string {
-	return fmt.Sprintf("%s-%s-%d", t.Prefix, t.Type, t.Number)
-}
-
-// MarshalText implements [encoding.TextMarshaler].
-func (t TaggedID) MarshalText() ([]byte, error) {
-	return []byte(t.String()), nil
-}
-
-// UnmarshalText implements [encoding.TextUnmarshaler].
-func (t *TaggedID) UnmarshalText(text []byte) error {
-	parts := strings.SplitN(string(text), "-", 3)
-	if len(parts) < 3 || parts[0] != "prod" || parts[1] == "" {
-		return ErrInvalidTaggedID
-	}
-	id, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return ErrInvalidTaggedID
-	}
-	*t = TaggedID{
-		Prefix: parts[0],
-		Type:   parts[1],
-		Number: ID(id),
-	}
-	return nil
-}
-
-// TaggedIDsToNumbers converts a slice of TaggedID to a slice of ID.
-func TaggedIDsToNumbers(taggedIDs []TaggedID) []ID {
-	ids := make([]ID, len(taggedIDs))
-	for i, tID := range taggedIDs {
-		ids[i] = tID.Number
-	}
-	return ids
-}
 
 // PINCode represents a door PIN code.
 // Every character is guaranteed to be a digit.
@@ -200,13 +111,28 @@ type AccessPoint struct {
 type Keychain struct {
 	ID         ID `json:"id"`
 	Attributes struct {
-		Name     string       `json:"name"`
-		Kind     KeychainKind `json:"kind"`
-		StartsAt time.Time    `json:"starts_at"`
-		EndsAt   time.Time    `json:"ends_at"`
-		TimeFrom WatchTime    `json:"time_from"`
-		TimeTo   WatchTime    `json:"time_to"`
-		Weekdays []Weekday    `json:"weekdays"`
+		Name string       `json:"name"`
+		Kind KeychainKind `json:"kind"`
+		// StartsAt is when the keychain becomes active.
+		StartsAt time.Time `json:"starts_at"`
+		// EndsAt is when the keychain expires.
+		EndsAt time.Time `json:"ends_at"`
+		// TimeFrom is the daily start time for access in the building timezone.
+		// For a custom keychain, this is wrong, since the keychain is always
+		// active.
+		TimeFrom Timestamp `json:"time_from"`
+		// TimeTo is the daily end time for access in the building timezone.
+		// For a custom keychain, this is wrong, since the keychain is always
+		// active.
+		TimeTo Timestamp `json:"time_to"`
+		// StartDate is the date when access begins in the building timezone.
+		StartDate Datestamp `json:"start_date,format:'2006-01-02'"`
+		// EndDate is the date when access ends in the building timezone.
+		EndDate Datestamp `json:"end_date,format:'2006-01-02'"`
+		// Weekdays is the list of weekdays when access is allowed.
+		Weekdays []Weekday `json:"weekdays"`
+		// AllowUnitAccess indicates if unit access is permitted.
+		AllowUnitAccess bool `json:"allow_unit_access"`
 	} `json:"attributes"`
 	Relationships struct {
 		VirtualKeys ReferenceList[VirtualKey] `json:"virtual_keys"`
@@ -289,82 +215,6 @@ const (
 	CustomKeychain    KeychainKind = "custom"
 	RecurringKeychain KeychainKind = "recurring"
 )
-
-// Weekday represents a day of the week.
-type Weekday string
-
-const (
-	Monday    Weekday = "mon"
-	Tuesday   Weekday = "tue"
-	Wednesday Weekday = "wed"
-	Thursday  Weekday = "thu"
-	Friday    Weekday = "fri"
-	Saturday  Weekday = "sat"
-	Sunday    Weekday = "sun"
-)
-
-// ToTimeWeekday converts the Weekday to [time.Weekday].
-func (w Weekday) ToTimeWeekday() time.Weekday {
-	switch w {
-	case Monday:
-		return time.Monday
-	case Tuesday:
-		return time.Tuesday
-	case Wednesday:
-		return time.Wednesday
-	case Thursday:
-		return time.Thursday
-	case Friday:
-		return time.Friday
-	case Saturday:
-		return time.Saturday
-	case Sunday:
-		return time.Sunday
-	default:
-		return -1
-	}
-}
-
-// WatchTime represents a time of day in the format [WatchTimeLayout].
-type WatchTime struct {
-	Hour   int
-	Minute int
-}
-
-const WatchTimeLayout = "15:04"
-
-var (
-	_ encoding.TextMarshaler   = (*WatchTime)(nil)
-	_ encoding.TextUnmarshaler = (*WatchTime)(nil)
-)
-
-// UnmarshalText implements [encoding.TextUnmarshaler].
-func (wt *WatchTime) UnmarshalText(text []byte) error {
-	t, err := time.Parse(WatchTimeLayout, string(text))
-	if err != nil {
-		return err
-	}
-	*wt = WatchTime{Hour: t.Hour(), Minute: t.Minute()}
-	return nil
-}
-
-// MarshalText implements [encoding.TextMarshaler].
-func (wt WatchTime) MarshalText() ([]byte, error) {
-	return []byte(wt.String()), nil
-}
-
-// String returns the string representation of the WatchTime.
-func (wt WatchTime) String() string {
-	return fmt.Sprintf("%02d:%02d", wt.Hour, wt.Minute)
-}
-
-// ToTime converts the WatchTime to a time.Time on the given date.
-func (wt WatchTime) ToTime(date time.Time) time.Time {
-	date = date.Truncate(24 * time.Hour)
-	date = date.Add(time.Duration(wt.Hour) * time.Hour)
-	date = date.Add(time.Duration(wt.Minute) * time.Minute)
-	return date
-}
 
 // --- GraphQL Specific Types (can be moved if file is split) ---
 
