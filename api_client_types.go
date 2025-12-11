@@ -186,7 +186,10 @@ type DoorRelease struct {
 	} `json:"relationships"`
 }
 
-// Panel represents a physical ButterflyMX panel, or an access point.
+// Panel represents a physical ButterflyMX panel. Not sure what the relation of
+// this is to [AccessPoint], since they both contain a relationship to a
+// [Building], but during creation of a keychain, supplying the access point IDs
+// will yield the keychain with relations to panels instead.
 type Panel struct {
 	ID         ID `json:"id"`
 	Attributes struct {

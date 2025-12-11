@@ -207,6 +207,31 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID TaggedID, status Acc
 	return unmarshalResultsWithReferences[Keychain](allData, allIncluded, slog)
 }
 
+// Keychain retrieves a single keychain by its ID, along with all related
+// entities resolved into a convenient structure. This method only fetches
+// [VirtualKey]s associated with the keychain, so the Devices will be missing.
+//
+// It calls the GET /v3/keychains/{id} REST endpoint.
+func (c *APIClient) Keychain(ctx context.Context, keychainID ID) (*ResultWithReferences[Keychain], error) {
+	slog := c.opts.Logger
+
+	path := fmt.Sprintf("/v3/keychains/%d?include=virtual_keys", keychainID)
+	slog.Debug(
+		"fetching keychain",
+		"keychain_id", keychainID,
+		"path", path)
+
+	var resp struct {
+		Data     RawReference   `json:"data"`
+		Included []RawReference `json:"included"`
+	}
+	if err := c.getAPI(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+
+	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included, slog)
+}
+
 // CustomKeychainArgs holds arguments for creating a new keychain.
 type CustomKeychainArgs struct {
 	// Name is the name of the keychain.

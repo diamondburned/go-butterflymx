@@ -86,6 +86,68 @@ func TestAPIClient_Keychains(t *testing.T) {
 	assert.Equal(t, "<REDACTED>", doorRelease.Attributes.MediumURL)
 }
 
+func TestAPIClient_Keychain(t *testing.T) {
+	customKeychainResponse := readFileAsResponseBody(t, "testdata/api-get-v3-keychains-id.json")
+
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				func(t *testing.T, req *http.Request) {
+					assert.Contains(t, req.URL.Path, "/10001")
+				},
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   customKeychainResponse,
+			},
+		},
+	})
+
+	apiClient := newTestAPIClient(t, mockrt)
+
+	result, err := apiClient.Keychain(t.Context(), 10001)
+	assert.NoError(t, err)
+
+	keychain := result.Data
+
+	// Assert keychain object.
+	assert.Equal(t, ID(10001), keychain.ID)
+	assert.Equal(t, "Jane Doe", keychain.Attributes.Name)
+	assert.Equal(t, CustomKeychain, keychain.Attributes.Kind)
+	assert.Equal(t, "2023-01-01T00:00:00Z", keychain.Attributes.StartsAt.Format(time.RFC3339))
+	assert.Equal(t, "2023-01-02T00:00:00Z", keychain.Attributes.EndsAt.Format(time.RFC3339))
+	assert.Equal(t, Timestamp{Hour: 16, Minute: 58}, keychain.Attributes.TimeFrom)
+	assert.Equal(t, Timestamp{Hour: 17, Minute: 58}, keychain.Attributes.TimeTo)
+	assert.Equal(t, Datestamp{Year: 2023, Month: time.January, Day: 1}, keychain.Attributes.StartDate)
+	assert.Equal(t, Datestamp{Year: 2023, Month: time.January, Day: 2}, keychain.Attributes.EndDate)
+	assert.False(t, keychain.Attributes.AllowUnitAccess)
+	assert.Zero(t, keychain.Attributes.Weekdays)
+
+	// Assert virtual key references.
+	assert.Equal(t, 1, len(keychain.Relationships.VirtualKeys))
+	assert.Equal(t, ID(10002), keychain.Relationships.VirtualKeys[0].ID)
+	assert.Equal(t, TypeVirtualKey, keychain.Relationships.VirtualKeys[0].Type)
+	assert.Zero(t, keychain.Relationships.VirtualKeys[0].Data)
+
+	// Assert devices references.
+	assert.Equal(t, 1, len(keychain.Relationships.Devices))
+	assert.Equal(t, ID(10003), keychain.Relationships.Devices[0].ID)
+	assert.Equal(t, TypePanel, keychain.Relationships.Devices[0].Type)
+	assert.Zero(t, keychain.Relationships.Devices[0].Data)
+
+	// Assert resolving of virtual key.
+	virtualKey, err := keychain.Relationships.VirtualKeys[0].Resolve(result.Refs)
+	assert.NoError(t, err)
+	assert.Equal(t, ID(10002), virtualKey.ID)
+	assert.Equal(t, "john.doe@example.com", virtualKey.Attributes.Name)
+	assert.Equal(t, "john.doe@example.com", virtualKey.Attributes.Email)
+	assert.Equal(t, PINCode("012345"), virtualKey.Attributes.PINCode)
+	assert.Equal(t, "<REDACTED>", virtualKey.Attributes.QRCodeImageURL)
+	assert.Equal(t, "<REDACTED>", virtualKey.Attributes.InstructionsURL)
+	assert.True(t, virtualKey.Attributes.SentAt.IsZero())
+}
+
 func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 	customKeychainRequest, customKeychainResponse := readFileAsRequestAndResponseBodies(t, "testdata/api-post-v3-keychains-custom.json")
 	assert.NoError(t, customKeychainRequest.Canonicalize())
@@ -108,10 +170,7 @@ func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 		},
 	})
 
-	apiClient := NewAPIClient(mockToken, &APIClientOpts{
-		HTTPClient: &http.Client{Transport: mockrt},
-		Logger:     slogt.New(t),
-	})
+	apiClient := newTestAPIClient(t, mockrt)
 
 	result, err := apiClient.CreateCustomKeychain(t.Context(), 10001, []ID{50001}, CustomKeychainArgs{
 		Name:            "Jane Doe",
@@ -142,6 +201,13 @@ func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ID(10003), device.ID)
 	assert.Equal(t, "Front Door", device.Attributes.Name)
+}
+
+func newTestAPIClient(t *testing.T, mockrt http.RoundTripper) *APIClient {
+	return NewAPIClient(mockToken, &APIClientOpts{
+		HTTPClient: &http.Client{Transport: mockrt},
+		Logger:     slogt.New(t),
+	})
 }
 
 func mustRFC3339(t *testing.T, s string) time.Time {
