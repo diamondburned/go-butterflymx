@@ -11,7 +11,7 @@ import (
 
 	"github.com/alecthomas/assert/v2"
 	"github.com/neilotoole/slogt"
-	"libdb.so/go-butterflymx/internal/httptest"
+	"libdb.so/go-butterflymx/internal/httpmock"
 )
 
 var mockToken APIStaticToken = "meowmeow"
@@ -19,10 +19,15 @@ var mockToken APIStaticToken = "meowmeow"
 func TestAPIClient_Keychains(t *testing.T) {
 	accessCodesResponse := readFileAsResponseBody(t, "testdata/api-get-v3-access-codes.json")
 
-	mockrt := httptest.NewMockRoundTripper([]httptest.MockResponse{
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
 		{
-			Status: 200,
-			Body:   accessCodesResponse,
+			RequestCheck: func(t *testing.T, req *http.Request) {
+				assert.Equal(t, "Bearer meowmeow", req.Header.Get("Authorization"))
+			},
+			Response: httpmock.RoundTripResponse{
+				Status: 200,
+				Body:   accessCodesResponse,
+			},
 		},
 	})
 
