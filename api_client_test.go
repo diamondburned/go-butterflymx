@@ -46,14 +46,14 @@ func TestAPIClient_Keychains(t *testing.T) {
 
 	// Assert keychain objects.
 	assert.Equal(t, 4, len(keychains), "expected 4 keychains")
-	assert.Equal(t, 31427903, keychains[0].ID)
-	assert.Equal(t, 31353789, keychains[1].ID)
-	assert.Equal(t, 31353474, keychains[2].ID)
-	assert.Equal(t, 31299156, keychains[3].ID)
+	assert.Equal(t, ID(20001), keychains[0].ID)
+	assert.Equal(t, ID(20003), keychains[1].ID)
+	assert.Equal(t, ID(20005), keychains[2].ID)
+	assert.Equal(t, ID(20007), keychains[3].ID)
 
 	// Assert virtual key references of the first keychain.
 	assert.Equal(t, 1, len(keychains[0].Relationships.VirtualKeys))
-	assert.Equal(t, 32553889, keychains[0].Relationships.VirtualKeys[0].ID)
+	assert.Equal(t, ID(20002), keychains[0].Relationships.VirtualKeys[0].ID)
 	assert.Equal(t, TypeVirtualKey, keychains[0].Relationships.VirtualKeys[0].Type)
 	// The Data field should be empty in the reference.
 	assert.Zero(t, keychains[0].Relationships.VirtualKeys[0].Data)
@@ -61,7 +61,7 @@ func TestAPIClient_Keychains(t *testing.T) {
 	// Assert resolving of virtual key of the first keychain.
 	virtualKey, err := keychains[0].Relationships.VirtualKeys[0].Resolve(results.Refs)
 	assert.NoError(t, err)
-	assert.Equal(t, 32553889, virtualKey.ID)
+	assert.Equal(t, ID(20002), virtualKey.ID)
 	assert.Equal(t, "user+delivery@example.com", virtualKey.Attributes.Name)
 	assert.Equal(t, "user+delivery@example.com", virtualKey.Attributes.Email)
 	assert.Equal(t, "012345", virtualKey.Attributes.PINCode)
@@ -70,7 +70,7 @@ func TestAPIClient_Keychains(t *testing.T) {
 
 	// Assert door release references of the virtual key.
 	assert.Equal(t, 9, len(virtualKey.Relationships.DoorReleases))
-	assert.Equal(t, 1536605877, virtualKey.Relationships.DoorReleases[0].ID)
+	assert.Equal(t, ID(30001), virtualKey.Relationships.DoorReleases[0].ID)
 	assert.Equal(t, TypeDoorRelease, virtualKey.Relationships.DoorReleases[0].Type)
 	// The Data field should be empty in the reference.
 	assert.Zero(t, virtualKey.Relationships.DoorReleases[0].Data)
@@ -78,10 +78,10 @@ func TestAPIClient_Keychains(t *testing.T) {
 	// Assert resolving of door release of the first virtual key.
 	doorRelease, err := virtualKey.Relationships.DoorReleases[0].Resolve(results.Refs)
 	assert.NoError(t, err)
-	assert.Equal(t, 1536605877, doorRelease.ID)
+	assert.Equal(t, ID(30001), doorRelease.ID)
 	assert.Equal(t, "Jane Doe", doorRelease.Attributes.Name)
-	assert.Equal(t, "2025-12-06T22:01:34Z", doorRelease.Attributes.CreatedAt.Format(time.RFC3339))
-	assert.Equal(t, "2025-12-06T22:01:33Z", doorRelease.Attributes.LoggedAt.Format(time.RFC3339))
+	assert.Equal(t, "2023-01-01T00:00:00Z", doorRelease.Attributes.CreatedAt.Format(time.RFC3339))
+	assert.Equal(t, "2023-01-01T00:00:00Z", doorRelease.Attributes.LoggedAt.Format(time.RFC3339))
 	assert.Equal(t, "<REDACTED>", doorRelease.Attributes.ThumbURL)
 	assert.Equal(t, "<REDACTED>", doorRelease.Attributes.MediumURL)
 }
@@ -113,10 +113,10 @@ func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 		Logger:     slogt.New(t),
 	})
 
-	result, err := apiClient.CreateCustomKeychain(t.Context(), 7648837, []ID{53449}, CustomKeychainArgs{
-		Name:            "Jane Test",
-		StartsAt:        mustRFC3339(t, "2025-12-09T16:58:00-0800"),
-		EndsAt:          mustRFC3339(t, "2025-12-10T17:58:00-0800"),
+	result, err := apiClient.CreateCustomKeychain(t.Context(), 10001, []ID{50001}, CustomKeychainArgs{
+		Name:            "Jane Doe",
+		StartsAt:        mustRFC3339(t, "2023-01-01T00:00:00-0800"),
+		EndsAt:          mustRFC3339(t, "2023-01-02T00:00:00-0800"),
 		AllowUnitAccess: false,
 	})
 	assert.NoError(t, err)
@@ -124,23 +124,23 @@ func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 	keychain := result.Data
 
 	// Assert keychain object.
-	assert.Equal(t, 31629991, keychain.ID)
-	assert.Equal(t, "Jane Test", keychain.Attributes.Name)
+	assert.Equal(t, ID(10001), keychain.ID)
+	assert.Equal(t, "Jane Doe", keychain.Attributes.Name)
 	assert.Equal(t, CustomKeychain, keychain.Attributes.Kind)
-	assert.Equal(t, "2025-12-10T00:58:00Z", keychain.Attributes.StartsAt.Format(time.RFC3339))
-	assert.Equal(t, "2025-12-11T01:58:00Z", keychain.Attributes.EndsAt.Format(time.RFC3339))
+	assert.Equal(t, "2023-01-01T00:00:00Z", keychain.Attributes.StartsAt.Format(time.RFC3339))
+	assert.Equal(t, "2023-01-02T00:00:00Z", keychain.Attributes.EndsAt.Format(time.RFC3339))
 
 	// Assert devices references.
 	assert.Zero(t, keychain.Relationships.VirtualKeys)
 	assert.Equal(t, 1, len(keychain.Relationships.Devices))
-	assert.Equal(t, 27861, keychain.Relationships.Devices[0].ID)
+	assert.Equal(t, ID(10003), keychain.Relationships.Devices[0].ID)
 	assert.Equal(t, TypePanel, keychain.Relationships.Devices[0].Type)
 	assert.Zero(t, keychain.Relationships.Devices[0].Data)
 
 	// Assert resolving of device.
 	device, err := keychain.Relationships.Devices[0].Resolve(result.Refs)
 	assert.NoError(t, err)
-	assert.Equal(t, 27861, device.ID)
+	assert.Equal(t, ID(10003), device.ID)
 	assert.Equal(t, "Front Door", device.Attributes.Name)
 }
 

@@ -1,0 +1,41 @@
+{
+  "data": {
+    "type": "virtual_keys",
+    "attributes": {
+      "recipients": [
+        {
+          "deliver_to": "john.doe@example.com",
+          "name": "john.doe@example.com"
+        }
+      ]
+    }
+  }
+}
+{
+  "data": [
+    {
+      "id": "10002",
+      "type": "virtual_keys",
+      "attributes": {
+        "name": "john.doe@example.com",
+        "qr_code_image_url": "<REDACTED>",
+        "email": "john.doe@example.com",
+        "sms_number": null,
+        "used_at": null,
+        "one_time_key_used_at": null,
+        "pin": "012345",
+        "instructions_url": "<REDACTED>",
+        "sent_at": null,
+        "synced_with_remote_lock": false
+      },
+      "relationships": {
+        "door_releases": {
+          "data": []
+        },
+        "vehicle": {
+          "data": null
+        }
+      }
+    }
+  ]
+}

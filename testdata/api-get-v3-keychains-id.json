@@ -1,0 +1,62 @@
+{
+  "data": {
+    "id": "10001",
+    "type": "keychains",
+    "attributes": {
+      "name": "Jane Doe",
+      "weekdays": [],
+      "starts_at": "2023-01-01T00:00:00Z",
+      "ends_at": "2023-01-02T00:00:00Z",
+      "time_from": "16:58",
+      "time_to": "17:58",
+      "kind": "custom",
+      "start_date": "2023-01-01",
+      "end_date": "2023-01-02",
+      "allow_unit_access": false
+    },
+    "relationships": {
+      "virtual_keys": {
+        "data": [
+          {
+            "id": "10002",
+            "type": "virtual_keys"
+          }
+        ]
+      },
+      "devices": {
+        "data": [
+          {
+            "id": "10003",
+            "type": "panels"
+          }
+        ]
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "10002",
+      "type": "virtual_keys",
+      "attributes": {
+        "name": "john.doe@example.com",
+        "qr_code_image_url": "<REDACTED>",
+        "email": "john.doe@example.com",
+        "sms_number": null,
+        "used_at": null,
+        "one_time_key_used_at": null,
+        "pin": "012345",
+        "instructions_url": "<REDACTED>",
+        "sent_at": null,
+        "synced_with_remote_lock": false
+      },
+      "relationships": {
+        "door_releases": {
+          "data": []
+        },
+        "vehicle": {
+          "data": null
+        }
+      }
+    }
+  ]
+}

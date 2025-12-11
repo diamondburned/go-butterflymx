@@ -219,8 +219,11 @@ type CustomKeychainArgs struct {
 	AllowUnitAccess bool `json:"allow_unit_access"`
 }
 
-// CreateCustomKeychain creates a new custom keychain.
-// It calls the POST /v3/keychains/custom endpoint.
+// CreateCustomKeychain creates a new custom keychain. A keychain consists of
+// multiple virtual keys, each granting access using their own PIN codes, and
+// they all share the same start and end times.
+//
+// This method calls the POST /v3/keychains/custom endpoint.
 func (c *APIClient) CreateCustomKeychain(
 	ctx context.Context,
 	tenantID ID, accessPointIDs []ID, args CustomKeychainArgs,
@@ -282,6 +285,67 @@ func (c *APIClient) CreateCustomKeychain(
 	}
 
 	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included, slog)
+}
+
+// VirtualKeyArgs holds arguments for creating a new virtual key.
+type VirtualKeyArgs struct {
+	// Recipients is a list of email addresses to send the virtual key to.
+	// ButterflyMX also accepts a Name, but this client uses the email address
+	// as the name as well.
+	Recipients []VirtualKeyRecipient `json:"recipients"`
+}
+
+// VirtualKeyRecipient represents a recipient of a virtual key. Virtual keys are
+// delivered over email.
+//
+// Note that you don't actually need to give ButterflyMX the user's actual
+// email, as the API already exposes the PIN code in [APIClient.Keychain].
+// Therefore, this email can just be an arbitrary sinkhole address.
+type VirtualKeyRecipient struct {
+	// Name is the name of the recipient.
+	Name string `json:"name"`
+	// DeliverTo is the email address to deliver the virtual key to.
+	DeliverTo string `json:"deliver_to"`
+}
+
+// CreateVirtualKeys creates a new virtual key for the given keychain. For each
+// given recipient, a new virtual key is created and returned in the result
+// lists.
+//
+// A virtual key is what actually assigns a user a PIN code to access doors, and
+// a keychain represents a collection of virtual keys and their associated
+// access points.
+func (c *APIClient) CreateVirtualKeys(
+	ctx context.Context,
+	keychainID ID,
+	virtualKeyArgs VirtualKeyArgs,
+) (*ResultsWithReferences[VirtualKey], error) {
+	slog := c.opts.Logger
+
+	type RequestBody struct {
+		Type       string         `json:"type"`
+		Attributes VirtualKeyArgs `json:"attributes"`
+	}
+
+	var body RequestBody
+	body.Type = "virtual_keys"
+	body.Attributes = virtualKeyArgs
+
+	slog.Debug(
+		"creating virtual key for keychain",
+		"keychain_id", keychainID,
+		"virtual_key_args", virtualKeyArgs)
+
+	path := fmt.Sprintf("/v3/keychains/%d/virtual_keys", keychainID)
+	var resp struct {
+		Data     []RawReference `json:"data"`
+		Included []RawReference `json:"included"`
+	}
+	if err := c.doAPIWithBody(ctx, http.MethodPost, path, body, &resp); err != nil {
+		return nil, err
+	}
+
+	return unmarshalResultsWithReferences[VirtualKey](resp.Data, resp.Included, slog)
 }
 
 func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query string, variables map[string]any, v any) error {

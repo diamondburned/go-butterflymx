@@ -3,17 +3,17 @@
     "type": "keychains",
     "attributes": {
       "allow_unit_access": false,
-      "ends_at": "2025-12-10T17:58:00-0800",
+      "ends_at": "2023-01-02T00:00:00-0800",
       "kind": "custom",
-      "name": "Jane Test",
-      "starts_at": "2025-12-09T16:58:00-0800"
+      "name": "Jane Doe",
+      "starts_at": "2023-01-01T00:00:00-0800"
     },
     "relationships": {
       "access_points": {
         "data": [
           {
             "type": "access_points",
-            "id": "53449"
+            "id": "50001"
           }
         ]
       },
@@ -23,7 +23,7 @@
       "tenant": {
         "data": {
           "type": "tenants",
-          "id": "7648837"
+          "id": "10001"
         }
       }
     }
@@ -31,18 +31,18 @@
 }
 {
   "data": {
-    "id": "31629991",
+    "id": "10001",
     "type": "keychains",
-    "attributes": {
-      "name": "Jane Test",
+      "attributes": {
+        "name": "Jane Doe",
       "weekdays": [],
-      "starts_at": "2025-12-10T00:58:00Z",
-      "ends_at": "2025-12-11T01:58:00Z",
+      "starts_at": "2023-01-01T00:00:00Z",
+      "ends_at": "2023-01-02T00:00:00Z",
       "time_from": "16:58",
       "time_to": "17:58",
       "kind": "custom",
-      "start_date": "2025-12-09",
-      "end_date": "2025-12-10",
+      "start_date": "2023-01-01",
+      "end_date": "2023-01-02",
       "allow_unit_access": false
     },
     "relationships": {
@@ -52,7 +52,7 @@
       "devices": {
         "data": [
           {
-            "id": "27861",
+            "id": "10003",
             "type": "panels"
           }
         ]
@@ -61,7 +61,7 @@
   },
   "included": [
     {
-      "id": "27861",
+      "id": "10003",
       "type": "panels",
       "attributes": {
         "name": "Front Door",
@@ -72,7 +72,7 @@
       "relationships": {
         "building": {
           "data": {
-            "id": "25898",
+            "id": "40003",
             "type": "buildings"
           }
         }
