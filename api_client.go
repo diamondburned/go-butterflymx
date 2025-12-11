@@ -53,27 +53,6 @@ var DefaultRequestBackoff = func() backoff.BackOff {
 	}
 }
 
-// APIStaticToken represents a static ButterflyMX API token.
-type APIStaticToken string
-
-var _ APITokenSource = APIStaticToken("")
-
-// APIToken returns the token as a string.
-func (t APIStaticToken) APIToken(ctx context.Context, _ bool) (APIStaticToken, error) {
-	return t, nil
-}
-
-// APITokenSource is an interface for acquiring a ButterflyMX API token.
-type APITokenSource interface {
-	// APIToken should return a valid API token or an error.
-	//
-	// If [renew] is true, the implementation should attempt to renew the token
-	// even if a cached token is available. Implementations may ignore this
-	// parameter, and the caller must detect that the "new" token is still
-	// invalid.
-	APIToken(ctx context.Context, renew bool) (APIStaticToken, error)
-}
-
 // APIClient is a client for interacting with the main ButterflyMX API.
 type APIClient struct {
 	tokenSource APITokenSource
