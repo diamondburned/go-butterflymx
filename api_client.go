@@ -61,11 +61,11 @@ type APIClient struct {
 
 // APIClientOpts holds optional parameters for configuring the API client.
 type APIClientOpts struct {
-	HTTPClient         *http.Client
-	Logger             *slog.Logger
-	UserAgent          string
-	RequestRetryOpts   []backoff.RetryOption // appends to [DefaultRequestRetryOpts]
-	RequestBackoffFunc func() backoff.BackOff
+	HTTPClient       *http.Client
+	Logger           *slog.Logger
+	UserAgent        string
+	RequestRetryOpts []backoff.RetryOption // appends to [DefaultRequestRetryOpts]
+	RequestBackoff   func() backoff.BackOff
 }
 
 // NewAPIClient creates a new API client.
@@ -76,8 +76,8 @@ func NewAPIClient(tokenSource APITokenSource, opts *APIClientOpts) *APIClient {
 	opts.Logger = use(opts.Logger, slog.Default())
 	opts.UserAgent = use(opts.UserAgent, DefaultUserAgent)
 	opts.RequestRetryOpts = slices.Concat(DefaultRequestRetryOpts, opts.RequestRetryOpts)
-	if opts.RequestRetryOpts == nil {
-		opts.RequestRetryOpts = DefaultRequestRetryOpts
+	if opts.RequestBackoff == nil {
+		opts.RequestBackoff = DefaultRequestBackoff
 	}
 
 	return &APIClient{
@@ -475,7 +475,7 @@ func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
 	var renewToken bool
 
 	retryOpts := slices.Concat(c.opts.RequestRetryOpts, []backoff.RetryOption{
-		backoff.WithBackOff(c.opts.RequestBackoffFunc()),
+		backoff.WithBackOff(c.opts.RequestBackoff()),
 		backoff.WithNotify(func(err error, d time.Duration) {
 			slog := c.opts.Logger
 			slog.Warn(
