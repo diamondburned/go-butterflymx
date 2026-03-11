@@ -33,7 +33,7 @@ const (
 
 // DefaultUserAgent is the User-Agent header value used by the API client. You
 // may want to change this via [APIClientOpts] if you need a different value.
-var DefaultUserAgent = "butterflymx-go-client/1.0"
+var DefaultUserAgent = "okhttp/4.12.0"
 
 // DefaultRequestRetryOpts is the default retry options for retrying API
 // requests without backoff. To override backoff, set the backoff constructor
