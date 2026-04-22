@@ -3,7 +3,7 @@ package butterflymx
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -24,24 +24,25 @@ var APIDeviceInfo = map[string]any{
 	"version":  "1.56.0",
 }
 
-// OAuth2Client consumes an OAuth2 token to exchange it for a ButterflyMX API
-// token. This client does not interact with the main ButterflyMX API endpoints
-// for actions like opening doors or creating keys.
+// DenizenLoginClient is a client that performs the OAuth2 to API token exchange
+// using the /denizen/v1/login endpoint. It is designed to be used with an
+// [oauth2.TokenSource] to obtain an [APITokenSource] that provides API tokens
+// for authenticating with the ButterflyMX API.
 //
 // It implements the [APITokenSource] interface.
-type OAuth2Client struct {
+type DenizenLoginClient struct {
 	tokenSource oauth2.TokenSource
 	lastToken   atomic.Pointer[APIStaticToken]
 }
 
-var _ APITokenSource = (*OAuth2Client)(nil)
+var _ APITokenSource = (*DenizenLoginClient)(nil)
 
-// NewOAuth2Client creates a new client for handling the OAuth2 to API token
+// NewDenizenLoginClient creates a new client for handling the OAuth2 to API token
 // exchange. It takes an [oauth2.TokenSource], which is expected to be fully
 // configured and capable of providing valid OAuth2 access tokens for the
 // ButterflyMX service.
-func NewOAuth2Client(tokenSource oauth2.TokenSource) *OAuth2Client {
-	return &OAuth2Client{
+func NewDenizenLoginClient(tokenSource oauth2.TokenSource) *DenizenLoginClient {
+	return &DenizenLoginClient{
 		tokenSource: tokenSource,
 	}
 }
@@ -53,13 +54,13 @@ func NewOAuth2Client(tokenSource oauth2.TokenSource) *OAuth2Client {
 // then sends it to the /denizen/v1/login endpoint. The ButterflyMX API
 // validates the OAuth2 token and returns a Rails session token, which is
 // required for all subsequent API interactions.
-func (c *OAuth2Client) APIToken(ctx context.Context, renew bool) (APIStaticToken, error) {
+func (c *DenizenLoginClient) APIToken(ctx context.Context, renew bool) (APIStaticToken, error) {
 	return c.APITokenSource().APIToken(ctx, renew)
 }
 
 // APITokenSource returns an [APITokenSource] that provides an API token until it
 // needs to be renewed (once [renew] is true).
-func (c *OAuth2Client) APITokenSource() APITokenSource {
+func (c *DenizenLoginClient) APITokenSource() APITokenSource {
 	return ReuseAPITokenSource(oauth2APITokenSource{
 		oauth2TokenSource: c.tokenSource,
 	})
@@ -98,7 +99,7 @@ func (s oauth2APITokenSource) APIToken(ctx context.Context, renew bool) (APIStat
 	var responseBody struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&responseBody); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &responseBody); err != nil {
 		return "", err
 	}
 
