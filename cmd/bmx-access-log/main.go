@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -16,17 +15,8 @@ import (
 	butterflymx "libdb.so/go-butterflymx"
 )
 
-var (
-	printJSON = false
-)
-
-func init() {
-	flag.BoolVar(&printJSON, "json", false, "output raw JSON instead of a formatted table")
-}
-
 func main() {
 	log.SetFlags(0)
-	flag.Parse()
 	ctx := context.Background()
 
 	apiToken := os.Getenv("BUTTERFLYMX_API_TOKEN")
