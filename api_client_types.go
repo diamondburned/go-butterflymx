@@ -30,6 +30,11 @@ func (p PINCode) Digits() iter.Seq[int] {
 	}
 }
 
+// String returns the string representation of the PINCode.
+func (p PINCode) String() string {
+	return string(p)
+}
+
 // Validate checks if the PINCode contains only digits.
 func (p PINCode) Validate() error {
 	for _, r := range p {
@@ -52,6 +57,19 @@ func (p *PINCode) UnmarshalText(text []byte) error {
 
 // ReferenceList is a helper type for lists of typed references.
 type ReferenceList[T any] []*TypedReference[T]
+
+// Resolve resolves all references in the list to their actual resources of type
+// T.
+func (l ReferenceList[T]) Resolve(refs map[ID]RawReference) iter.Seq2[*T, error] {
+	return func(yield func(*T, error) bool) {
+		for _, ref := range l {
+			resolved, err := ref.Resolve(refs)
+			if !yield(resolved, err) {
+				return
+			}
+		}
+	}
+}
 
 // MarshalJSON implements [json.Marshaler].
 func (l ReferenceList[T]) MarshalJSON() ([]byte, error) {
@@ -89,7 +107,7 @@ type Tenant struct {
 type Unit struct {
 	ID          TaggedID `json:"id"`
 	Label       string   `json:"label"`
-	FloorNumber int      `json:"floorNumber"`
+	FloorNumber int      `json:"floorNumber,string"`
 }
 
 // Building represents a building with its properties.
