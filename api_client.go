@@ -425,6 +425,18 @@ func (c *APIClient) CreateVirtualKeys(
 	return unmarshalResultsWithReferences[VirtualKey](resp.Data, resp.Included, slog)
 }
 
+// RevokeVirtualKey revokes a virtual key.
+func (c *APIClient) RevokeVirtualKey(ctx context.Context, keychainID, virtualKeyID ID) error {
+	slog := c.opts.Logger
+	slog.Debug(
+		"revoking virtual key",
+		"keychain_id", keychainID,
+		"virtual_key_id", virtualKeyID)
+
+	path := fmt.Sprintf("/v3/keychains/%d/virtual_keys/%d", keychainID, virtualKeyID)
+	return c.doAPI(ctx, http.MethodDelete, path, nil)
+}
+
 func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query string, variables map[string]any, v any) error {
 	req, err := c.createRequest(ctx, http.MethodPost, DenizenGraphQLEndpoint, map[string]any{
 		"operationName": operationName,
@@ -439,6 +451,10 @@ func (c *APIClient) doDenizenGraphQL(ctx context.Context, operationName, query s
 
 func (c *APIClient) getAPI(ctx context.Context, path string, v any) error {
 	return c.doAPIWithBody(ctx, http.MethodGet, path, nil, v)
+}
+
+func (c *APIClient) doAPI(ctx context.Context, method, path string, v any) error {
+	return c.doAPIWithBody(ctx, method, path, nil, v)
 }
 
 func (c *APIClient) doAPIWithBody(ctx context.Context, method, path string, body any, v any) error {
@@ -517,6 +533,13 @@ func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return nil, backoff.Permanent(fmt.Errorf("API request failed on non-server error: status %d", resp.StatusCode))
+		}
+
+		if resp.StatusCode == http.StatusNoContent {
+			if dst != nil {
+				return nil, backoff.Permanent(fmt.Errorf("expected response body but got 204 No Content"))
+			}
+			return nil, nil
 		}
 
 		if err := json.UnmarshalRead(resp.Body, dst); err != nil {
