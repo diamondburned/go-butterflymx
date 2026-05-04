@@ -202,12 +202,6 @@ func (c *APIClient) UnlockDoor(ctx context.Context, tenantID ID, accessPointID I
 // endpoint. This method automatically handles pagination and accumulates all
 // results before resolving relationships.
 func (c *APIClient) Keychains(ctx context.Context, tenantID ID, status AccessCodeStatus) (*ResultsWithReferences[Keychain], error) {
-	slog := c.opts.Logger
-	slog.Debug(
-		"fetching keychains",
-		"tenant_id", tenantID,
-		"status", status)
-
 	type accessCodesResponse struct {
 		Data     []RawReference `json:"data"`
 		Included []RawReference `json:"included"`
@@ -229,11 +223,6 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID ID, status AccessCod
 			"page[number]":   {strconv.Itoa(page)},
 		}.Encode()
 
-		slog.Debug(
-			"fetching keychains page",
-			"page", page,
-			"path", path)
-
 		var resp accessCodesResponse
 		if err := c.getAPI(ctx, path, &resp); err != nil {
 			return nil, err
@@ -242,19 +231,10 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID ID, status AccessCod
 		allData = append(allData, resp.Data...)
 		allIncluded = append(allIncluded, resp.Included...)
 
-		slog.Debug(
-			"fetched keychains page",
-			"page", page,
-			"data_count", len(resp.Data),
-			"data_count_total", len(allData),
-			"included_count", len(resp.Included),
-			"included_count_total", len(allIncluded),
-			"has_next", resp.Links.Next != nil)
-
 		hasNext = resp.Links.Next != nil
 	}
 
-	return unmarshalResultsWithReferences[Keychain](allData, allIncluded, slog)
+	return unmarshalResultsWithReferences[Keychain](allData, allIncluded)
 }
 
 // Keychain retrieves a single keychain by its ID, along with all related
@@ -263,14 +243,7 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID ID, status AccessCod
 //
 // It calls the GET /v3/keychains/{id} REST endpoint.
 func (c *APIClient) Keychain(ctx context.Context, keychainID ID) (*ResultWithReferences[Keychain], error) {
-	slog := c.opts.Logger
-
 	path := fmt.Sprintf("/v3/keychains/%d?include=virtual_keys", keychainID)
-	slog.Debug(
-		"fetching keychain",
-		"keychain_id", keychainID,
-		"path", path)
-
 	var resp struct {
 		Data     RawReference   `json:"data"`
 		Included []RawReference `json:"included"`
@@ -278,8 +251,7 @@ func (c *APIClient) Keychain(ctx context.Context, keychainID ID) (*ResultWithRef
 	if err := c.getAPI(ctx, path, &resp); err != nil {
 		return nil, err
 	}
-
-	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included, slog)
+	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included)
 }
 
 // CustomKeychainArgs holds arguments for creating a new keychain.
@@ -303,8 +275,6 @@ func (c *APIClient) CreateCustomKeychain(
 	ctx context.Context,
 	tenantID ID, accessPointIDs []ID, args CustomKeychainArgs,
 ) (*ResultWithReferences[Keychain], error) {
-	slog := c.opts.Logger
-
 	type RequestBody struct {
 		Data struct {
 			Type       string `json:"type"`
@@ -344,12 +314,6 @@ func (c *APIClient) CreateCustomKeychain(
 	// Since devices are unsupported, we set an empty list.
 	body.Data.Relationships.Devices.Data = []RawReference{}
 
-	slog.Debug(
-		"creating custom keychain",
-		"tenant_id", tenantID,
-		"access_point_ids", accessPointIDs,
-		"args", args)
-
 	var resp struct {
 		Data     RawReference   `json:"data"`
 		Included []RawReference `json:"included"`
@@ -359,7 +323,7 @@ func (c *APIClient) CreateCustomKeychain(
 		return nil, err
 	}
 
-	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included, slog)
+	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included)
 }
 
 // VirtualKeyArgs holds arguments for creating a new virtual key.
@@ -395,8 +359,6 @@ func (c *APIClient) CreateVirtualKeys(
 	keychainID ID,
 	virtualKeyArgs VirtualKeyArgs,
 ) (*ResultsWithReferences[VirtualKey], error) {
-	slog := c.opts.Logger
-
 	type RequestBody struct {
 		Data struct {
 			Type       string         `json:"type"`
@@ -408,11 +370,6 @@ func (c *APIClient) CreateVirtualKeys(
 	body.Data.Type = "virtual_keys"
 	body.Data.Attributes = virtualKeyArgs
 
-	slog.Debug(
-		"creating virtual key for keychain",
-		"keychain_id", keychainID,
-		"virtual_key_args", virtualKeyArgs)
-
 	path := fmt.Sprintf("/v3/keychains/%d/virtual_keys", keychainID)
 	var resp struct {
 		Data     []RawReference `json:"data"`
@@ -422,17 +379,11 @@ func (c *APIClient) CreateVirtualKeys(
 		return nil, err
 	}
 
-	return unmarshalResultsWithReferences[VirtualKey](resp.Data, resp.Included, slog)
+	return unmarshalResultsWithReferences[VirtualKey](resp.Data, resp.Included)
 }
 
 // RevokeVirtualKey revokes a virtual key.
 func (c *APIClient) RevokeVirtualKey(ctx context.Context, keychainID, virtualKeyID ID) error {
-	slog := c.opts.Logger
-	slog.Debug(
-		"revoking virtual key",
-		"keychain_id", keychainID,
-		"virtual_key_id", virtualKeyID)
-
 	path := fmt.Sprintf("/v3/keychains/%d/virtual_keys/%d", keychainID, virtualKeyID)
 	return c.doAPI(ctx, http.MethodDelete, path, nil)
 }

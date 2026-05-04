@@ -7,7 +7,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"log/slog"
 )
 
 // ObjectType represents the type of an object in the API as a string.
@@ -71,7 +70,7 @@ type RawReference struct {
 // unmarshalResultsWithReferences unmarshals a list of RawReference objects
 // into a ResultsWithReferences structure, resolving the data field into
 // the specified DataT type.
-func unmarshalResultsWithReferences[DataT any](data, included []RawReference, slog *slog.Logger) (*ResultsWithReferences[DataT], error) {
+func unmarshalResultsWithReferences[DataT any](data, included []RawReference) (*ResultsWithReferences[DataT], error) {
 	results := ResultsWithReferences[DataT]{
 		Data: make([]DataT, 0, len(data)),
 		Refs: make(map[ID]RawReference, len(data)+len(included)),
@@ -101,17 +100,11 @@ func unmarshalResultsWithReferences[DataT any](data, included []RawReference, sl
 		results.Refs[raw.ID] = raw
 	}
 
-	slog.Debug(
-		"unmarshaled results with references",
-		"data_count", len(results.Data),
-		"refs_count", len(results.Refs),
-		"included_count", len(included))
-
 	return &results, nil
 }
 
-func unmarshalResultWithReferences[DataT any](data RawReference, included []RawReference, slog *slog.Logger) (*ResultWithReferences[DataT], error) {
-	results, err := unmarshalResultsWithReferences[DataT]([]RawReference{data}, included, slog)
+func unmarshalResultWithReferences[DataT any](data RawReference, included []RawReference) (*ResultWithReferences[DataT], error) {
+	results, err := unmarshalResultsWithReferences[DataT]([]RawReference{data}, included)
 	if err != nil {
 		return nil, err
 	}
