@@ -48,12 +48,12 @@ func (ref *TypedReference[T]) Resolve(refs map[ID]RawReference) (*T, error) {
 
 	refDest, ok := refs[ref.ID]
 	if !ok {
-		return nil, fmt.Errorf("reference ID %q not found", ref.ID)
+		return nil, fmt.Errorf("reference ID %v not found", ref.ID)
 	}
 
 	refData, err := unmarshalReference[T](refDest)
 	if err != nil {
-		return nil, fmt.Errorf("reference ID %q: failed to unmarshal data: %w", ref.ID, err)
+		return nil, fmt.Errorf("reference ID %v: failed to unmarshal data: %w", ref.ID, err)
 	}
 
 	return refData, nil
