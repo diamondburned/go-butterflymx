@@ -243,7 +243,7 @@ func (c *APIClient) Keychains(ctx context.Context, tenantID ID, status AccessCod
 //
 // It calls the GET /v3/keychains/{id} REST endpoint.
 func (c *APIClient) Keychain(ctx context.Context, keychainID ID) (*ResultWithReferences[Keychain], error) {
-	path := fmt.Sprintf("/v3/keychains/%d?include=virtual_keys", keychainID)
+	path := fmt.Sprintf("/v3/keychains/%d?include=virtual_keys.door_releases.panel", keychainID)
 	var resp struct {
 		Data     RawReference   `json:"data"`
 		Included []RawReference `json:"included"`
