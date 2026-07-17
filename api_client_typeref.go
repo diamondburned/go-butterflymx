@@ -7,6 +7,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 // ObjectType represents the type of an object in the API as a string.
@@ -23,15 +25,15 @@ const (
 // ResultsWithReferences holds a list of results of type T along with
 // a map of references to all related objects.
 type ResultsWithReferences[T any] struct {
-	Data []T
-	Refs map[ID]RawReference
+	Data []T                 `json:"data"`
+	Refs map[ID]RawReference `json:"refs"`
 }
 
 // ResultWithReferences holds a single result of type T along with
 // a map of references to all related objects.
 type ResultWithReferences[T any] struct {
-	Data T
-	Refs map[ID]RawReference
+	Data T                   `json:"data"`
+	Refs map[ID]RawReference `json:"refs"`
 }
 
 // TypedReference extends from a RawReference to provide type-safe
@@ -59,12 +61,40 @@ func (ref *TypedReference[T]) Resolve(refs map[ID]RawReference) (*T, error) {
 	return refData, nil
 }
 
+// Schema returns the Huma custom schema for TypedReference.
+func (r TypedReference[T]) Schema(registry huma.Registry) *huma.Schema {
+	return RawReference(r).Schema(registry)
+}
+
 // RawReference holds the internal representation of a relationship
 // reference.
 type RawReference struct {
 	ID   ID             `json:"id,string"`
 	Type ObjectType     `json:"type"`
 	Data jsontext.Value `json:",inline"`
+}
+
+// Schema returns the Huma custom schema for RawReference, resolving it as an
+// object containing 'id', 'type', and arbitrary additional properties from the
+// inline data field.
+func (RawReference) Schema(r huma.Registry) *huma.Schema {
+	return &huma.Schema{
+		Type: huma.TypeObject,
+		Properties: map[string]*huma.Schema{
+			"id": {
+				Type:        huma.TypeString,
+				Description: "The unique identifier of the referenced resource.",
+				Examples:    []any{"10001"},
+			},
+			"type": {
+				Type:        huma.TypeString,
+				Description: "The type of the referenced resource.",
+				Examples:    []any{"keychains"},
+			},
+		},
+		Required:             []string{"id", "type"},
+		AdditionalProperties: true,
+	}
 }
 
 // unmarshalResultsWithReferences unmarshals a list of RawReference objects
@@ -137,3 +167,4 @@ func unmarshalReference[T any](raw RawReference) (*T, error) {
 
 	return &data, nil
 }
+

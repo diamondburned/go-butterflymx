@@ -73,8 +73,9 @@ func (l ReferenceList[T]) Resolve(refs map[ID]RawReference) iter.Seq2[*T, error]
 
 // MarshalJSON implements [json.Marshaler].
 func (l ReferenceList[T]) MarshalJSON() ([]byte, error) {
+	type Alias []*TypedReference[T]
 	return json.Marshal(map[string]any{
-		"data": l,
+		"data": Alias(l),
 	})
 }
 
@@ -94,63 +95,63 @@ func (l *ReferenceList[T]) UnmarshalJSON(data []byte) error {
 
 // Tenant represents a user's residence information within a building.
 type Tenant struct {
-	ID        TaggedID `json:"id"`
-	FirstName string   `json:"firstName"`
-	LastName  string   `json:"lastName"`
-	Name      string   `json:"name"`
-	PINCode   PINCode  `json:"pinCode"`
+	ID        TaggedID `json:"id" example:"prod-tenant-12345"`
+	FirstName string   `json:"firstName" example:"Jane"`
+	LastName  string   `json:"lastName" example:"Doe"`
+	Name      string   `json:"name" example:"Jane Doe"`
+	PINCode   PINCode  `json:"pinCode" example:"012345"`
 	Unit      Unit     `json:"unit"`
 	Building  Building `json:"building"`
 }
 
 // Unit represents a specific unit within a building.
 type Unit struct {
-	ID          TaggedID `json:"id"`
-	Label       string   `json:"label"`
-	FloorNumber int      `json:"floorNumber,string"`
+	ID          TaggedID `json:"id" example:"prod-unit-40001"`
+	Label       string   `json:"label" example:"Apt 4B"`
+	FloorNumber int      `json:"floorNumber,string" example:"4"`
 }
 
 // Building represents a building with its properties.
 type Building struct {
-	ID   TaggedID `json:"id"`
-	GUID string   `json:"guid"`
-	Name string   `json:"name"`
+	ID   TaggedID `json:"id" example:"prod-building-40003"`
+	GUID string   `json:"guid" example:"b80ca6a6-e0e6-4b8a-8be7-5c56dfca48ff"`
+	Name string   `json:"name" example:"Hunter Capital"`
 }
 
 // AccessPoint represents a door or entry point that can be unlocked.
 type AccessPoint struct {
-	ID           TaggedID `json:"id"`
-	Name         string   `json:"name"`
-	OpenDuration int      `json:"openDuration"`
-	Online       bool     `json:"online"`
+	ID           TaggedID `json:"id" example:"prod-access_point-50001"`
+	Name         string   `json:"name" example:"Front Door"`
+	OpenDuration int      `json:"openDuration" example:"5"`
+	Online       bool     `json:"online" example:"true"`
 }
 
 // Keychain represents a virtual keychain, containing virtual keys and their associated entities.
 type Keychain struct {
-	ID         ID `json:"id"`
+	ID         ID `json:"id" example:"10001"`
 	Attributes struct {
-		Name string       `json:"name"`
-		Kind KeychainKind `json:"kind"`
+		Name string       `json:"name" example:"Amazon Delivery"`
+		Kind KeychainKind `json:"kind" example:"recurring"`
 		// StartsAt is when the keychain becomes active.
-		StartsAt time.Time `json:"starts_at"`
+		StartsAt time.Time `json:"starts_at" example:"2023-01-01T00:00:00Z"`
 		// EndsAt is when the keychain expires.
-		EndsAt time.Time `json:"ends_at"`
+		EndsAt time.Time `json:"ends_at" example:"2023-01-02T00:00:00Z"`
 		// TimeFrom is the daily start time for access in the building timezone.
 		// For a custom keychain, this is wrong, since the keychain is always
 		// active.
-		TimeFrom Timestamp `json:"time_from"`
+		TimeFrom Timestamp `json:"time_from" example:"08:00"`
 		// TimeTo is the daily end time for access in the building timezone.
 		// For a custom keychain, this is wrong, since the keychain is always
 		// active.
-		TimeTo Timestamp `json:"time_to"`
+		TimeTo Timestamp `json:"time_to" example:"20:00"`
 		// StartDate is the date when access begins in the building timezone.
-		StartDate Datestamp `json:"start_date,format:'2006-01-02'"`
+		StartDate Datestamp `json:"start_date,format:'2006-01-02'" example:"2023-01-01"`
 		// EndDate is the date when access ends in the building timezone.
-		EndDate Datestamp `json:"end_date,format:'2006-01-02'"`
+		EndDate Datestamp `json:"end_date,format:'2006-01-02'" example:"2023-01-02"`
 		// Weekdays is the list of weekdays when access is allowed.
-		Weekdays []Weekday `json:"weekdays"`
+		Weekdays []Weekday `json:"weekdays" example:"[\"mon\", \"tue\"]"`
 		// AllowUnitAccess indicates if unit access is permitted.
-		AllowUnitAccess bool `json:"allow_unit_access"`
+		AllowUnitAccess bool `json:"allow_unit_access" example:"false"`
 	} `json:"attributes"`
 	Relationships struct {
 		VirtualKeys ReferenceList[VirtualKey] `json:"virtual_keys"`
@@ -161,14 +162,14 @@ type Keychain struct {
 // VirtualKey represents an allocated door PIN code for a contact (not
 // necessarily a user but usually is).
 type VirtualKey struct {
-	ID         ID `json:"id"`
+	ID         ID `json:"id" example:"10002"`
 	Attributes struct {
-		Name            string    `json:"name"`
-		Email           string    `json:"email"`
-		PINCode         PINCode   `json:"pin"`
-		QRCodeImageURL  string    `json:"qr_code_image_url"`
-		InstructionsURL string    `json:"instructions_url"`
-		SentAt          time.Time `json:"sent_at"`
+		Name            string    `json:"name" example:"john.doe@example.com"`
+		Email           string    `json:"email" example:"john.doe@example.com"`
+		PINCode         PINCode   `json:"pin" example:"012345"`
+		QRCodeImageURL  string    `json:"qr_code_image_url" example:"https://api.butterflymx.com/v3/qr_codes/some-uuid.png"`
+		InstructionsURL string    `json:"instructions_url" example:"https://butterflymx.com/instructions/some-uuid"`
+		SentAt          time.Time `json:"sent_at" example:"2023-01-01T00:00:00Z"`
 	} `json:"attributes"`
 	Relationships struct {
 		DoorReleases ReferenceList[DoorRelease] `json:"door_releases"`
@@ -177,16 +178,16 @@ type VirtualKey struct {
 
 // DoorRelease represents an event of a door being released.
 type DoorRelease struct {
-	ID         ID `json:"id"`
+	ID         ID `json:"id" example:"30001"`
 	Attributes struct {
-		ReleaseMethod   string    `json:"release_method"`
-		DoorReleaseType string    `json:"door_release_type"`
-		PanelUserType   string    `json:"panel_user_type"`
-		Name            string    `json:"name"` // account name
-		CreatedAt       time.Time `json:"created_at"`
-		LoggedAt        time.Time `json:"logged_at"`
-		ThumbURL        string    `json:"thumb_url"`
-		MediumURL       string    `json:"medium_url"`
+		ReleaseMethod   string    `json:"release_method" example:"virtual_key_pin"`
+		DoorReleaseType string    `json:"door_release_type" example:"visitor"`
+		PanelUserType   string    `json:"panel_user_type" example:"default"`
+		Name            string    `json:"name" example:"Jane Doe"` // account name
+		CreatedAt       time.Time `json:"created_at" example:"2023-01-01T00:00:00Z"`
+		LoggedAt        time.Time `json:"logged_at" example:"2023-01-01T00:00:00Z"`
+		ThumbURL        string    `json:"thumb_url" example:"https://api.butterflymx.com/v3/door_releases/30001/thumb.jpg"`
+		MediumURL       string    `json:"medium_url" example:"https://api.butterflymx.com/v3/door_releases/30001/medium.jpg"`
 	} `json:"attributes"`
 	Relationships struct {
 		Unit struct {
@@ -209,9 +210,9 @@ type DoorRelease struct {
 // [Building], but during creation of a keychain, supplying the access point IDs
 // will yield the keychain with relations to panels instead.
 type Panel struct {
-	ID         ID `json:"id"`
+	ID         ID `json:"id" example:"10003"`
 	Attributes struct {
-		Name string `json:"name"`
+		Name string `json:"name" example:"Hunter Capital Front Door"`
 	} `json:"attributes"`
 	Relationships struct {
 		Building struct {
@@ -274,6 +275,6 @@ type tenantAccessPointsGraphQLResponse struct {
 }
 
 type PageInfo struct {
-	HasNextPage bool   `json:"hasNextPage"`
-	EndCursor   string `json:"endCursor"`
+	HasNextPage bool   `json:"hasNextPage" example:"true"`
+	EndCursor   string `json:"endCursor" example:"eyJpZCI6IjEwMDAxIn0"`
 }
