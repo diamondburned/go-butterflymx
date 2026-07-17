@@ -1,0 +1,25 @@
+name: "ButterflyMX Proxy Server"
+description: "A proxy server to interact with the ButterflyMX API, exposing endpoints to manage tenants, keychains, and door unlocks."
+version: "1.0.0"
+slug: bmx
+init: false
+arch:
+  - aarch64
+  - amd64
+startup: services
+ports:
+  80/tcp: 80
+options:
+  api_secret: ""
+  butterflymx_api_token: ""
+  enable_mtls: false
+  tls_cert_path: ""
+  tls_key_path: ""
+  client_ca_path: ""
+schema:
+  api_secret: str?
+  butterflymx_api_token: str?
+  enable_mtls: bool?
+  tls_cert_path: str?
+  tls_key_path: str?
+  client_ca_path: str?
