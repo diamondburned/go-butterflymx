@@ -254,14 +254,35 @@ func (c *APIClient) Keychain(ctx context.Context, keychainID ID) (*ResultWithRef
 	return unmarshalResultWithReferences[Keychain](resp.Data, resp.Included)
 }
 
+// CustomKeychainTime is a custom time type for keychains that uses a specific
+// format for JSON marshaling and unmarshaling.
+type CustomKeychainTime time.Time
+
+// CustomKeychainTimeFormat is the format used for marshaling and unmarshaling
+// [CustomKeychainTime].
+const CustomKeychainTimeFormat = "2006-01-02T15:04:05-0700"
+
+func (t CustomKeychainTime) MarshalText() ([]byte, error) {
+	return []byte(time.Time(t).Format(CustomKeychainTimeFormat)), nil
+}
+
+func (t *CustomKeychainTime) UnmarshalText(data []byte) error {
+	tt, err := time.Parse(CustomKeychainTimeFormat, string(data))
+	if err != nil {
+		return fmt.Errorf("invalid custom keychain time format: %w", err)
+	}
+	*t = CustomKeychainTime(tt)
+	return nil
+}
+
 // CustomKeychainArgs holds arguments for creating a new keychain.
 type CustomKeychainArgs struct {
 	// Name is the name of the keychain.
 	Name string `json:"name"`
 	// StartsAt is the start time of the keychain.
-	StartsAt time.Time `json:"starts_at,format:'2006-01-02T15:04:05-0700'"`
+	StartsAt CustomKeychainTime `json:"starts_at"`
 	// EndsAt is the end time of the keychain.
-	EndsAt time.Time `json:"ends_at,format:'2006-01-02T15:04:05-0700'"`
+	EndsAt CustomKeychainTime `json:"ends_at"`
 	// AllowUnitAccess indicates whether unit access is allowed.
 	AllowUnitAccess bool `json:"allow_unit_access"`
 }

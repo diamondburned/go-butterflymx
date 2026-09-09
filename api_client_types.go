@@ -145,9 +145,9 @@ type Keychain struct {
 		// active.
 		TimeTo Timestamp `json:"time_to" example:"20:00"`
 		// StartDate is the date when access begins in the building timezone.
-		StartDate Datestamp `json:"start_date,format:'2006-01-02'" example:"2023-01-01"`
+		StartDate Datestamp `json:"start_date" example:"2023-01-01"`
 		// EndDate is the date when access ends in the building timezone.
-		EndDate Datestamp `json:"end_date,format:'2006-01-02'" example:"2023-01-02"`
+		EndDate Datestamp `json:"end_date" example:"2023-01-02"`
 		// Weekdays is the list of weekdays when access is allowed.
 		Weekdays []Weekday `json:"weekdays" example:"[\"mon\", \"tue\"]"`
 		// AllowUnitAccess indicates if unit access is permitted.

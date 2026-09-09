@@ -71,7 +71,7 @@ func (r TypedReference[T]) Schema(registry huma.Registry) *huma.Schema {
 type RawReference struct {
 	ID   ID             `json:"id,string"`
 	Type ObjectType     `json:"type"`
-	Data jsontext.Value `json:",inline"`
+	Data jsontext.Value `json:",embed"`
 }
 
 // Schema returns the Huma custom schema for RawReference, resolving it as an
@@ -108,12 +108,12 @@ func unmarshalResultsWithReferences[DataT any](data, included []RawReference) (*
 
 	for _, raw := range data {
 		if raw.Data == nil {
-			return nil, fmt.Errorf("object %q: missing data field", raw.ID)
+			return nil, fmt.Errorf("object %v: missing data field", raw.ID)
 		}
 
 		data, err := unmarshalReference[DataT](raw)
 		if err != nil {
-			return nil, fmt.Errorf("object %q: %w", raw.ID, err)
+			return nil, fmt.Errorf("object %v: %w", raw.ID, err)
 		}
 
 		results.Data = append(results.Data, *data)
@@ -125,7 +125,7 @@ func unmarshalResultsWithReferences[DataT any](data, included []RawReference) (*
 
 	for _, raw := range included {
 		if raw.Data == nil {
-			return nil, fmt.Errorf("included object %q: missing data field", raw.ID)
+			return nil, fmt.Errorf("included object %v: missing data field", raw.ID)
 		}
 		results.Refs[raw.ID] = raw
 	}
@@ -167,4 +167,3 @@ func unmarshalReference[T any](raw RawReference) (*T, error) {
 
 	return &data, nil
 }
-

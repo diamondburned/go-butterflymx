@@ -209,8 +209,8 @@ func TestAPIClient_CreateCustomKeychain(t *testing.T) {
 
 	result, err := apiClient.CreateCustomKeychain(t.Context(), 10001, []ID{50001}, CustomKeychainArgs{
 		Name:            "Jane Doe",
-		StartsAt:        mustRFC3339(t, "2023-01-01T00:00:00-0800"),
-		EndsAt:          mustRFC3339(t, "2023-01-02T00:00:00-0800"),
+		StartsAt:        CustomKeychainTime(mustRFC3339(t, "2023-01-01T00:00:00-0800")),
+		EndsAt:          CustomKeychainTime(mustRFC3339(t, "2023-01-02T00:00:00-0800")),
 		AllowUnitAccess: false,
 	})
 	assert.NoError(t, err)
