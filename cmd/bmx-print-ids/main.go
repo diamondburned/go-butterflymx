@@ -53,6 +53,19 @@ func main() {
 			continue
 		}
 
+		for page, err := range client.TenantAccessPoints(ctx, tenant.ID) {
+			if err != nil {
+				log.Printf("warning: failed to fetch access point for tenant %q: %v", tenant.Name, err)
+				break
+			}
+
+			for ai, ap := range page.Nodes {
+				isLastAccessPoint := ai == len(page.Nodes)-1 && !page.HasNextPage && len(keychains.Data) == 0
+				accessPointBranch := newConnector(&tenantBranch, isLastAccessPoint)
+				fmt.Println(accessPointBranch.nodef("access point id=%v name=%q", ap.ID, ap.Name))
+			}
+		}
+
 		for ki, keychain := range keychains.Data {
 			attrs := keychain.Attributes
 			timeInfo := formatTimeRange(attrs.StartsAt, attrs.EndsAt)

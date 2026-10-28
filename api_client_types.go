@@ -278,3 +278,18 @@ type PageInfo struct {
 	HasNextPage bool   `json:"hasNextPage" example:"true"`
 	EndCursor   string `json:"endCursor" example:"eyJpZCI6IjEwMDAxIn0"`
 }
+
+// PageIter is a helper type around a paginated fetching endpoint. It resembles
+// [PageInfo] but holds actual data and a boolean indicating if there is a next
+// page.
+type PageIter[T any] struct {
+	Nodes       []T
+	HasNextPage bool
+}
+
+func pageIterForNodes[T any](nodes []T, pageInfo PageInfo) PageIter[T] {
+	return PageIter[T]{
+		Nodes:       nodes,
+		HasNextPage: pageInfo.HasNextPage,
+	}
+}

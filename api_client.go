@@ -138,8 +138,8 @@ func (c *APIClient) Tenants(ctx context.Context) iter.Seq2[Tenant, error] {
 // TenantAccessPoints retrieves a list of access points (doors) for a given tenant.
 // It calls the POST /denizen/v1/graphql endpoint with the "TenantAccessPoints" operation.
 // This method automatically handles pagination and returns an iterator.
-func (c *APIClient) TenantAccessPoints(ctx context.Context, tenantID TaggedID) iter.Seq2[AccessPoint, error] {
-	return func(yield func(AccessPoint, error) bool) {
+func (c *APIClient) TenantAccessPoints(ctx context.Context, tenantID TaggedID) iter.Seq2[PageIter[AccessPoint], error] {
+	return func(yield func(PageIter[AccessPoint], error) bool) {
 		var after *string
 		for {
 			variables := map[string]any{
@@ -148,22 +148,20 @@ func (c *APIClient) TenantAccessPoints(ctx context.Context, tenantID TaggedID) i
 			}
 			var resp tenantAccessPointsGraphQLResponse
 			if err := c.doDenizenGraphQL(ctx, "TenantAccessPoints", tenantAccessPointsQuery, variables, &resp); err != nil {
-				yield(AccessPoint{}, err)
+				yield(PageIter[AccessPoint]{}, err)
 				return
 			}
 			if len(resp.Data.Nodes) == 0 {
 				return
 			}
 			if len(resp.Data.Nodes) > 1 {
-				yield(AccessPoint{}, fmt.Errorf("more than 1 tenant returned"))
+				yield(PageIter[AccessPoint]{}, fmt.Errorf("more than 1 tenant returned"))
 				return
 			}
 
 			accessPoints := resp.Data.Nodes[0].AccessPoints
-			for _, ap := range accessPoints.Nodes {
-				if !yield(ap, nil) {
-					return
-				}
+			if !yield(pageIterForNodes(accessPoints.Nodes, accessPoints.PageInfo), nil) {
+				return
 			}
 
 			if !accessPoints.PageInfo.HasNextPage {
