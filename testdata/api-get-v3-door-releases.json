@@ -1,0 +1,63 @@
+{
+  "data": [
+    {
+      "id": "30010",
+      "type": "door_releases",
+      "attributes": {
+        "release_method": "front_door_view",
+        "door_release_type": "visitor",
+        "panel_user_type": "default",
+        "name": "Jane Doe",
+        "created_at": "2023-01-02T12:00:05Z",
+        "logged_at": "2023-01-02T12:00:02Z",
+        "thumb_url": "https://bmx-rails-production.s3.amazonaws.com/uploads/door_release/30010/image/derivatives/medium_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpeg",
+        "medium_url": "https://bmx-rails-production.s3.amazonaws.com/uploads/door_release/30010/image/derivatives/medium_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpeg"
+      },
+      "relationships": {
+        "unit": { "data": { "id": "40001", "type": "units" } },
+        "user": { "data": { "id": "10003", "type": "users" } },
+        "panel": { "data": { "id": "10003", "type": "panels" } },
+        "device": { "data": { "id": "10003", "type": "panels" } }
+      }
+    },
+    {
+      "id": "30009",
+      "type": "door_releases",
+      "attributes": {
+        "release_method": "virtual_key_pin",
+        "door_release_type": "visitor",
+        "panel_user_type": "default",
+        "name": "John Smith",
+        "created_at": "2023-01-02T11:55:00Z",
+        "logged_at": "2023-01-02T11:55:00Z",
+        "thumb_url": "",
+        "medium_url": ""
+      },
+      "relationships": {
+        "unit": { "data": { "id": "40001", "type": "units" } },
+        "user": { "data": { "id": "40002", "type": "users" } },
+        "panel": { "data": { "id": "10003", "type": "panels" } },
+        "device": { "data": { "id": "10003", "type": "panels" } }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "10003",
+      "type": "users",
+      "attributes": {
+        "name": "Colliding User ID"
+      }
+    },
+    {
+      "id": "10003",
+      "type": "panels",
+      "attributes": {
+        "name": "Hunter Capital Front Door"
+      }
+    }
+  ],
+  "links": {
+    "next": "https://api.butterflymx.com/v3/door_releases?page%5Bnumber%5D=2"
+  }
+}

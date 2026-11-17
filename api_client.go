@@ -172,9 +172,25 @@ func (c *APIClient) TenantAccessPoints(ctx context.Context, tenantID TaggedID) i
 	}
 }
 
+// UnlockDoorResult holds the response from unlocking an access point.
+type UnlockDoorResult struct {
+	RequestID string `json:"requestId" example:"00000000-0000-0000-0000-000000000000"`
+}
+
 // UnlockDoor sends a request to unlock a door (access point) for a given
 // tenant.
 func (c *APIClient) UnlockDoor(ctx context.Context, tenantID ID, accessPointID ID) error {
+	_, err := c.UnlockDoorWithResult(ctx, tenantID, accessPointID)
+	return err
+}
+
+// UnlockDoorWithResult sends a request to unlock a door (access point) for a
+// given tenant and returns the API response containing the request ID.
+//
+// Because unlocking a door is not idempotent, transport errors and 5xx
+// responses are not retried; only a single 401 token-renewal retry is
+// attempted.
+func (c *APIClient) UnlockDoorWithResult(ctx context.Context, tenantID ID, accessPointID ID) (UnlockDoorResult, error) {
 	tenantTaggedID := NewTaggedID("tenant", tenantID)
 	accessPointTaggedID := NewTaggedID("access_point", accessPointID)
 
@@ -184,15 +200,95 @@ func (c *APIClient) UnlockDoor(ctx context.Context, tenantID ID, accessPointID I
 		"tenantId":      tenantTaggedID,
 	})
 	if err != nil {
-		return err
+		return UnlockDoorResult{}, err
 	}
 
-	var resp struct{}
-	if err := c.doJSONRequest(req, &resp); err != nil {
-		return err
+	var resp UnlockDoorResult
+	if err := c.doJSONRequestWithOptions(req, &resp, false); err != nil {
+		return UnlockDoorResult{}, err
 	}
 
-	return nil
+	return resp, nil
+}
+
+// DoorReleasesOpts configures [APIClient.DoorReleases].
+type DoorReleasesOpts struct {
+	// PageSize sets page[size]. Defaults to 100 if <= 0.
+	PageSize int
+	// ReleaseMethod optionally filters via filter[release_method].
+	ReleaseMethod string
+}
+
+// DoorReleasesPage holds one page of [DoorRelease] events along with any
+// included [Panel] resources keyed by panel ID.
+type DoorReleasesPage struct {
+	Data        []DoorRelease
+	Panels      map[ID]Panel
+	HasNextPage bool
+}
+
+// DoorReleases retrieves paginated door-release events for a tenant, newest
+// first, by calling GET /v3/door_releases. Callers can break out of iteration
+// early once events fall before their target time window.
+func (c *APIClient) DoorReleases(ctx context.Context, tenantID ID, opts *DoorReleasesOpts) iter.Seq2[DoorReleasesPage, error] {
+	pageSize := 100
+	releaseMethod := ""
+	if opts != nil {
+		if opts.PageSize > 0 {
+			pageSize = opts.PageSize
+		}
+		releaseMethod = opts.ReleaseMethod
+	}
+
+	return func(yield func(DoorReleasesPage, error) bool) {
+		type doorReleasesResponse struct {
+			Data     []DoorRelease  `json:"data"`
+			Included []RawReference `json:"included"`
+			Links    struct {
+				Next *string `json:"next"`
+			} `json:"links"`
+		}
+
+		for page := 1; ; page++ {
+			q := url.Values{
+				"filter[tenant]": {fmt.Sprintf("%d", tenantID)},
+				"include":        {"panel"},
+				"page[size]":     {strconv.Itoa(pageSize)},
+				"page[number]":   {strconv.Itoa(page)},
+			}
+			if releaseMethod != "" {
+				q.Set("filter[release_method]", releaseMethod)
+			}
+
+			var resp doorReleasesResponse
+			if err := c.getAPI(ctx, "/v3/door_releases?"+q.Encode(), &resp); err != nil {
+				yield(DoorReleasesPage{}, err)
+				return
+			}
+
+			panels := make(map[ID]Panel)
+			for _, raw := range resp.Included {
+				if raw.Type != TypePanel {
+					continue
+				}
+				panel, err := unmarshalReference[Panel](raw)
+				if err != nil {
+					yield(DoorReleasesPage{}, fmt.Errorf("door releases included panel %v: %w", raw.ID, err))
+					return
+				}
+				panels[panel.ID] = *panel
+			}
+
+			hasNext := resp.Links.Next != nil
+			if !yield(DoorReleasesPage{
+				Data:        resp.Data,
+				Panels:      panels,
+				HasNextPage: hasNext,
+			}, nil) || !hasNext {
+				return
+			}
+		}
+	}
 }
 
 // Keychains retrieves a rich list of keychains, with all related entities
@@ -458,6 +554,10 @@ func (c *APIClient) createRequest(ctx context.Context, method, rawURL string, js
 }
 
 func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
+	return c.doJSONRequestWithOptions(req, dst, true)
+}
+
+func (c *APIClient) doJSONRequestWithOptions(req *http.Request, dst any, retryOnServerError bool) error {
 	var renewToken bool
 
 	retryOpts := slices.Concat(c.opts.RequestRetryOpts, []backoff.RetryOption{
@@ -474,17 +574,35 @@ func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
 		}),
 	})
 
+	attempt := 0
 	_, err := backoff.Retry(req.Context(), func() (*struct{}, error) {
-		token, err := c.tokenSource.APIToken(req.Context(), renewToken)
+		attemptReq := req.Clone(req.Context())
+		if attempt > 0 && req.Body != nil {
+			if req.GetBody == nil {
+				return nil, backoff.Permanent(fmt.Errorf("failed to rewind request body: GetBody is nil"))
+			}
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, backoff.Permanent(fmt.Errorf("failed to rewind request body: %w", err))
+			}
+			attemptReq.Body = body
+		}
+		attempt++
+
+		token, err := c.tokenSource.APIToken(attemptReq.Context(), renewToken)
 		if err != nil {
 			return nil, backoff.Permanent(fmt.Errorf("failed to get API token: %w", err))
 		}
 
-		req.Header.Set("Authorization", "Bearer "+string(token))
+		attemptReq.Header.Set("Authorization", "Bearer "+string(token))
 
-		resp, err := c.opts.HTTPClient.Do(req)
+		resp, err := c.opts.HTTPClient.Do(attemptReq)
 		if err != nil {
-			return nil, fmt.Errorf("HTTP request failed: %w", err)
+			err = fmt.Errorf("HTTP request failed: %w", err)
+			if !retryOnServerError {
+				return nil, backoff.Permanent(err)
+			}
+			return nil, err
 		}
 		defer resp.Body.Close()
 
@@ -498,7 +616,11 @@ func (c *APIClient) doJSONRequest(req *http.Request, dst any) error {
 		}
 
 		if resp.StatusCode >= 500 {
-			return nil, fmt.Errorf("server error: status %d", resp.StatusCode)
+			err := fmt.Errorf("server error: status %d", resp.StatusCode)
+			if !retryOnServerError {
+				return nil, backoff.Permanent(err)
+			}
+			return nil, err
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -2,15 +2,18 @@ package butterflymx
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/alecthomas/assert/v2"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/neilotoole/slogt"
 	"libdb.so/go-butterflymx/internal/httpmock"
 )
@@ -181,6 +184,173 @@ func TestAPIClient_UnlockDoor(t *testing.T) {
 
 	err := apiClient.UnlockDoor(t.Context(), 67890, 12345)
 	assert.NoError(t, err)
+}
+
+type renewingTokenSource struct {
+	calls int
+}
+
+func (s *renewingTokenSource) APIToken(_ context.Context, renew bool) (APIStaticToken, error) {
+	s.calls++
+	if renew {
+		return "fresh-token", nil
+	}
+	return "stale-token", nil
+}
+
+func TestAPIClient_UnlockDoorWithResult_401RenewBodyRewind(t *testing.T) {
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: func(t *testing.T, req *http.Request) {
+				assert.Equal(t, "Bearer stale-token", req.Header.Get("Authorization"))
+				body, err := io.ReadAll(req.Body)
+				assert.NoError(t, err)
+				assert.True(t, len(body) > 0)
+			},
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusUnauthorized,
+				Body:   []byte(`{"error":"unauthorized"}`),
+			},
+		},
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				func(t *testing.T, req *http.Request) {
+					assert.Equal(t, "Bearer fresh-token", req.Header.Get("Authorization"))
+					assert.True(t, req.ContentLength > 0)
+				},
+				httpmock.RoundTripRequestCheckJSON(func(t *testing.T, data map[string]any) {
+					assert.Equal(t, "prod-access_point-12345", data["accessPointId"])
+					assert.Equal(t, "prod-tenant-67890", data["tenantId"])
+				}),
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   []byte(`{"requestId": "req-renewed-1"}`),
+			},
+		},
+	})
+
+	tokSrc := &renewingTokenSource{}
+	apiClient := NewAPIClient(tokSrc, &APIClientOpts{
+		HTTPClient: &http.Client{Transport: mockrt},
+		Logger:     slogt.New(t),
+		RequestBackoff: func() backoff.BackOff {
+			return &backoff.ZeroBackOff{}
+		},
+	})
+
+	res, err := apiClient.UnlockDoorWithResult(t.Context(), 67890, 12345)
+	assert.NoError(t, err)
+	assert.Equal(t, "req-renewed-1", res.RequestID)
+	assert.Equal(t, 2, tokSrc.calls)
+}
+
+func TestAPIClient_UnlockDoor_NoRetryOn5xx(t *testing.T) {
+	calls := 0
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: func(t *testing.T, req *http.Request) {
+				calls++
+			},
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusBadGateway,
+				Body:   []byte(`{"error":"bad gateway"}`),
+			},
+		},
+	})
+
+	apiClient := NewAPIClient(mockToken, &APIClientOpts{
+		HTTPClient: &http.Client{Transport: mockrt},
+		Logger:     slogt.New(t),
+		RequestBackoff: func() backoff.BackOff {
+			return &backoff.ZeroBackOff{}
+		},
+	})
+
+	_, err := apiClient.UnlockDoorWithResult(t.Context(), 67890, 12345)
+	assert.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
+func TestAPIClient_DoorReleases(t *testing.T) {
+	page1Body := readFileAsResponseBody(t, "testdata/api-get-v3-door-releases.json")
+	page2Body := []byte(`{
+		"data": [
+			{
+				"id": "30008",
+				"type": "door_releases",
+				"attributes": {
+					"release_method": "api",
+					"door_release_type": "visitor",
+					"panel_user_type": "default",
+					"name": "Alice",
+					"created_at": "2023-01-01T10:00:00Z",
+					"logged_at": "2023-01-01T10:00:00Z",
+					"thumb_url": "",
+					"medium_url": ""
+				},
+				"relationships": {
+					"panel": { "data": { "id": "10003", "type": "panels" } }
+				}
+			}
+		],
+		"included": [],
+		"links": { "next": null }
+	}`)
+
+	mockrt := httpmock.NewRoundTripper(t, []httpmock.RoundTrip{
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				func(t *testing.T, req *http.Request) {
+					assert.Equal(t, "/v3/door_releases", req.URL.Path)
+					q := req.URL.Query()
+					assert.Equal(t, "10001", q.Get("filter[tenant]"))
+					assert.Equal(t, "panel", q.Get("include"))
+					assert.Equal(t, "50", q.Get("page[size]"))
+					assert.Equal(t, "1", q.Get("page[number]"))
+				},
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   page1Body,
+			},
+		},
+		{
+			RequestCheck: httpmock.ChainRoundTripRequestChecks(
+				requestCheckAuthorizationBearer,
+				func(t *testing.T, req *http.Request) {
+					q := req.URL.Query()
+					assert.Equal(t, "2", q.Get("page[number]"))
+				},
+			),
+			Response: httpmock.RoundTripResponse{
+				Status: http.StatusOK,
+				Body:   page2Body,
+			},
+		},
+	})
+
+	apiClient := newTestAPIClient(t, mockrt)
+
+	var pages []DoorReleasesPage
+	for page, err := range apiClient.DoorReleases(t.Context(), 10001, &DoorReleasesOpts{PageSize: 50}) {
+		assert.NoError(t, err)
+		pages = append(pages, page)
+	}
+
+	assert.Equal(t, 2, len(pages))
+	assert.True(t, pages[0].HasNextPage)
+	assert.Equal(t, 2, len(pages[0].Data))
+	assert.Equal(t, ID(30010), pages[0].Data[0].ID)
+	assert.Equal(t, "front_door_view", pages[0].Data[0].Attributes.ReleaseMethod)
+	assert.Equal(t, "Hunter Capital Front Door", pages[0].Panels[10003].Attributes.Name)
+	assert.Equal(t, ID(30009), pages[0].Data[1].ID)
+	assert.Equal(t, "", pages[0].Data[1].Attributes.MediumURL)
+
+	assert.False(t, pages[1].HasNextPage)
+	assert.Equal(t, 1, len(pages[1].Data))
+	assert.Equal(t, ID(30008), pages[1].Data[0].ID)
 }
 
 func TestAPIClient_CreateCustomKeychain(t *testing.T) {
